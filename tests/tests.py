@@ -227,7 +227,7 @@ class TestAmenityFilters(unittest.TestCase):
         # C1=1, C2=0, C3=0
         amenity = make_amenity_binary(self.centres,
             {'Personal and Professional Services': [1, 0, 0]})
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'service', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -238,7 +238,7 @@ class TestAmenityFilters(unittest.TestCase):
         """Comparison trips only land on centres with Retail = 1."""
         amenity = make_amenity_binary(self.centres,
             {'Retail': [0, 1, 0]})
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'comparison', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -249,7 +249,7 @@ class TestAmenityFilters(unittest.TestCase):
         """Entertainment trips only land on centres with Entertainment = 1."""
         amenity = make_amenity_binary(self.centres,
             {'Entertainment': [0, 0, 1]})
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'entertainment', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -262,7 +262,7 @@ class TestAmenityFilters(unittest.TestCase):
             'Cafe':       [1, 0, 0],
             'Restaurant': [0, 0, 0],
         })
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'food_drink', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -275,7 +275,7 @@ class TestAmenityFilters(unittest.TestCase):
             'Cafe':       [0, 0, 0],
             'Restaurant': [0, 1, 0],
         })
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'food_drink', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -303,7 +303,7 @@ class TestAmenityFilters(unittest.TestCase):
             'convenience': make_utility_matrix(self.agent_ids, self.centres, vals),
         }
         amenity = make_amenity_binary(self.centres, {'Retail': [1, 1, 1]})
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'comparison', self.all_triggered, self.consumers,
             utility_matrices, amenity)
         valid_dests = dests.dropna()
@@ -336,7 +336,7 @@ class TestDestinationDistribution(unittest.TestCase):
         amenity = make_amenity_binary(centres, {'Retail': [1, 1]})
         all_triggered = pd.Series(True, index=consumers.index)
 
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'comparison', all_triggered, consumers, utility_matrices, amenity)
 
         counts = dests.value_counts()
@@ -418,14 +418,13 @@ class TestRetailCentreEvaluation(unittest.TestCase):
     def test_evaluate_retail_centres_bottom_10_boosts_utility(self):
         """C1 is in the bottom 10% of size peers (1 vs 20,20) and spatial peers. Should be boosted."""
         
-        # Assert C1 starts at 1.0
-        self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.0)
+        # First failure: creates a strike
+        tracker = {}
+        agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities, tracker=tracker)
+        self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.0) # No boost yet
         
-        # Need to provide amenities for the evaluation logic
-        amenities = {'Foodstore': pd.Series([1, 1, 1, 1], index=self.centres)}
-        messages = agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities)
-        
-        # C1 should receive a boost (1.10)
+        # Second consecutive failure: triggers boost
+        agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities, tracker=tracker)
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.10)
         # C2, C3 are doing fine -> no boost
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C2'], 1.0)
