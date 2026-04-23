@@ -6,18 +6,21 @@ __pycache__/
 venv/
 ENV/
 
-# Data and Outputs
+# Data and Simulation Outputs
 outputs/
+data_local/
 *.parquet
-*.png
 *.gpkg
 *.csv
 *.xlsx
 
-# Config/Environment
-.env
-config_override.py
+# Image outputs
+*.png
+*.html
 
 # IDEs
 .vscode/
 .idea/
+
+# Notebook checkpoints
+.ipynb_checkpoints/

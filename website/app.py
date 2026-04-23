@@ -6,8 +6,11 @@ import pandas as pd
 import numpy as np
 import warnings
 
-# Add current dir to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add simulation/ to path so we can import the core model modules
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_HERE)
+_SIM_DIR = os.path.join(_PROJECT_ROOT, "simulation")
+sys.path.insert(0, _SIM_DIR)
 import config
 import agent
 from assign_trip_frequencies import assign_frequencies
@@ -103,9 +106,9 @@ def _load_all_data(n_agents=None):
 
     import pyarrow.parquet as pq
     
-    from main import TEST_MODE
+    from main import TEST_MODE  # noqa: F401 — kept for legacy; use config.TEST_MODE directly
     base_utility_dir = os.path.join(config.MODEL_DIR, "Utility")
-    if TEST_MODE:
+    if config.TEST_MODE:
         base_utility_dir = os.path.join(base_utility_dir, "testing")
 
     print(f"Loading 6 trip-specific utility datasets from {base_utility_dir} ({n_agents or 'all'} agents)…")

@@ -1,83 +1,173 @@
-# Retail ABM
+# Retail Centre Agent-Based Model (RC-ABM)
 
-![Python Version](https://img.shields.io/badge/python-3.x-blue.svg)
-![GitHub Repository](https://img.shields.io/badge/repository-published-success.svg)
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-Academic-lightgrey)
+![Status](https://img.shields.io/badge/Status-Active%20Development-green)
 
-An Agent-Based Model (ABM) simulating retail shopping behaviour. Agents make shopping decisions daily based on their stock levels, trip probabilities derived from National Travel Survey (NTS) data, and utility scores for each retail centre.
+> A spatially-explicit, agent-based model of retail consumer behaviour, calibrated to real-world household demographics and National Travel Survey (NTS) trip frequency data.
+
+---
+
+## Overview
+
+The RC-ABM simulates how households in a study region make decisions about **where to shop**, **what for**, and **how they get there**. Each agent (household) is endowed with demographic attributes drawn from real data and makes daily shopping decisions driven by two independent systems:
+
+1. **Grocery Replenishment (Stock-Based):** Agents maintain a household stock of grocery goods that depletes daily at an individually calibrated rate. When stock falls below a threshold, a shopping trip is triggered.
+2. **Frequency-Based NTS Trips (Probability-Based):** Non-grocery trip types—Service, Comparison, Entertainment, and Food & Drink—are sampled daily against per-agent probabilities derived from the National Travel Survey.
+
+A key feature is **Trip Chaining**: if an agent triggers multiple trips on the same day, there is a 50% chance they consolidate them into a single visit to a multi-purpose retail centre, provided one exists that satisfies all their requirements.
+
+Destination choice is governed by pre-computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence. A **Softmax** sampling function is applied at the point of choice, ensuring probabilistic selection while weighting higher-utility alternatives.
+
+---
+
+## Key Features
+
+- **Trip Chaining**: Multi-purpose trips are simulated via a stochastic chaining mechanism, where agents may consolidate two or more trip types into a single visit.
+- **Joint Mode-Destination Choice**: Transport mode and destination are chosen simultaneously, emerging from a combined utility landscape rather than being pre-assigned.
+- **Amenity Filtering**: Each trip type is constrained to retail centres offering the relevant facilities (e.g., a Comparison trip requires a centre with a `Retail` presence flag).
+- **Adaptive Feedback Loop**: Agent utility scores are updated after each visit (+5% / -5% stochastic reinforcement), allowing visit patterns to evolve over the simulation period.
+- **Retail Centre Evaluation**: An automated peer-ranking system identifies underperforming centres and applies targeted utility boosts, simulating real-world intervention policy.
+- **Spatial Diffusion**: Word-of-mouth effects are modelled through postcode-sector-level diffusion, boosting the utility of popular centres for demographically similar agents in the same area.
+
+---
+
+## Project Structure
+
+```
+RC-ABM/
+│
+├── simulation/                  # Core model engine
+│   ├── main.py                  # GUI entry point and daily simulation loop
+│   ├── agent.py                 # All agent logic (vectorised NumPy/Pandas)
+│   ├── config.py                # File paths and model constants
+│   ├── assign_trip_frequencies.py   # Assigns NTS trip probabilities to agents (run once)
+│   └── visualization.py         # Generates visitation maps and spatial analytics
+│
+├── website/                     # Streamlit web interface
+│   ├── app.py                   # Streamlit dashboard (run/visualise from browser)
+│   ├── templates/               # HTML templates (Flask fallback)
+│   └── static/                  # Static assets
+│
+├── notebooks/                   # Exploratory analysis and result validation
+│   ├── analysis_centre_makeup.ipynb
+│   ├── analysis_results_notebook.ipynb
+│   ├── latest_visit_mapping.ipynb
+│   └── testing_results.ipynb
+│
+├── tests/                       # Unit tests and verification scripts
+│   ├── tests.py
+│   └── _verify.py
+│
+├── outputs/                     # Simulation outputs (gitignored)
+├── .gitignore
+└── README.md
+```
 
 ---
 
 ## How to Run
 
-1. **One-time setup** (run when agent data changes):
-   ```
-   python assign_trip_frequencies.py
-   ```
+### 1. Prerequisites
 
-2. **Run the simulation**:
-   ```
-   python main.py
-   ```
-   A Tkinter window will open. Set your parameters and click **Run Simulation**.
+Install dependencies:
 
-3. **Outputs** are saved to `outputs/`:
-   - `visits_log_<timestamp>.parquet` — full trip log
-   - `visitation_map_<timestamp>.png` — map of retail centre visits
+```bash
+pip install pandas numpy geopandas pyarrow streamlit plotly pydeck
+```
+
+### 2. One-Time Setup
+
+Run this once whenever the underlying agent data changes. It assigns NTS trip frequency probabilities to each household:
+
+```bash
+python simulation/assign_trip_frequencies.py
+```
+
+### 3. Run the Desktop Simulation (Tkinter GUI)
+
+```bash
+python simulation/main.py
+```
+
+A configuration window will open. Set the number of agents and simulation days, then click **Run Simulation**. Results are saved to `outputs/` as a timestamped `.parquet` file alongside a visitation density map (`.png`).
+
+### 4. Run the Streamlit Web Interface
+
+```bash
+streamlit run website/app.py
+```
+
+The dashboard provides interactive controls, live simulation progress, and post-run analytics including flow maps, market share dominance maps, and trip type breakdowns.
 
 ---
 
-## File Structure
+## Model Logic
 
-| File | Purpose |
+### Trip Generation
+
+Each simulation day, for every active agent:
+
+| System | Trigger | Trip Types |
+|---|---|---|
+| **Stock-Based** | `Stock < REORDER_THRESHOLD` | `grocery` (bulk or convenience) |
+| **Probability-Based** | `rand() < daily_prob` | `service`, `comparison`, `entertainment`, `food_drink` |
+
+### Trip Chaining
+
+If an agent is triggered for more than one trip on a given day, a **50/50 coin flip** determines whether they:
+- **Chain**: Attempt a single visit to one retail centre that can satisfy all trip requirements simultaneously (amenity AND logic across all trip types).
+- **Split**: Proceed to independent destinations for each trip (current default behaviour).
+
+If no single centre can satisfy the combined amenity requirements, the agent falls back to split trips.
+
+### Destination Choice
+
+For each trip (or chain), destination selection follows this sequence:
+
+1. **Amenity Filter**: Zero out utilities for all centres lacking the required facility.
+2. **Modifier Application**: Apply neighbourhood conformity, distance sensitivity, and any active intervention boosts.
+3. **Softmax Sampling**: Sample a (centre, mode) pair proportionally to `exp(β × utility)`, with `β = 5.0` by default.
+
+### Feedback & Dynamics
+
+- **Visit Feedback**: Each completed visit applies a stochastic +5% or -5% multiplier to the visiting agent's utility for that centre, reinforcing or weakening future preferences.
+- **Periodic Evaluation**: Every `EVAL_FREQ` days, all retail centres are ranked against size-comparable and spatially proximate peers. Persistent underperformers (2+ consecutive failing periods) receive a utility boost (capped at +30%) across all agent utility matrices.
+- **Spatial Diffusion**: Trending centres in a postcode sector see boosted utility for agents in the same area, weighted by demographic similarity.
+
+---
+
+## Configuration
+
+All key parameters are set in `simulation/config.py`:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `REORDER_THRESHOLD` | `20.0` | Grocery stock level that triggers a shopping trip |
+| `MAX_STOCK_CAPACITY` | `100.0` | Maximum stock a household can hold |
+| `DAILY_CONSUMPTION_MEAN` | `50.0` | Mean daily grocery consumption rate |
+| `SOFTMAX_BETA` | `5.0` | Destination choice temperature (higher = more deterministic) |
+| `DEMOGRAPHIC_DIFFUSION_WEIGHT` | `1.0` | Strength of demographic homophily in spatial diffusion |
+| `DEMOGRAPHIC_BANDWIDTH` | `0.5` | Gaussian decay width for demographic similarity scoring |
+
+---
+
+## Outputs
+
+| File | Description |
 |---|---|
-| `main.py` | GUI entry point and simulation loop |
-| `agent.py` | All agent logic (vectorized, NumPy/Pandas) |
-| `config.py` | File paths and model constants |
-| `assign_trip_frequencies.py` | Assigns NTS trip frequencies to agents (run once) |
-| `visualization.py` | Generates the visitation density map |
-| `app.py` | (Optional) Flask web interface alternative to `main.py` |
-
----
-
-## Simulation Logic
-
-### Initialisation
-- Loads enriched consumer agent file (with NTS trip probability columns)
-- Loads Bulk and Convenience utility score matrices
-- Loads retail centre amenity binary data from GeoPackage
-- Samples the requested number of agents and assigns each a random starting stock and consumption rate
-
-### Each Day — Two Independent Systems
-
-#### System 1: Grocery (Stock-Based)
-1. Each agent's **stock** decreases by their daily consumption rate
-2. Agents below the stock threshold **need to shop**
-3. They choose a mode: **Online / Bulk / Convenience** (weighted by their probabilities)
-4. Physical shoppers choose a retail centre weighted by **utility scores** (Bulk or Convenience matrix)
-5. Stock is replenished to maximum after shopping
-
-#### System 2: NTS Frequency Trips (Probability-Based)
-Each day, for every agent, 4 independent trip types are rolled:
-
-| Trip Type | NTS Column | Amenity Filter | Utility Matrix |
-|---|---|---|---|
-| **Service** | `PurposeCount_Service` | `Personal & Professional Services = 1` | Convenience |
-| **Comparison** | `PurposeCount_Comparison` | `Retail = 1` | Bulk |
-| **Entertainment** | `PurposeCount_Entertainment` | `Entertainment = 1` | Convenience |
-| **Food & Drink** | `PurposeCount_Food/Drink` | `Cafe = 1 OR Restaurant = 1` | Convenience |
-
-- Multiple trip types can fire on the same day for the same agent
-- Centres that don't have the required amenity get a utility score of 0 (cannot be chosen)
-- For Food & Drink: a centre is valid if it has **either** a Cafe or a Restaurant (or both)
+| `outputs/visits_log_<timestamp>.parquet` | Full trip log with AgentID, Trip_Type, Retail_Centre, Transport_Mode, Travel_Time_Min, Utility_Score |
+| `outputs/visitation_map_<timestamp>.png` | Static choropleth map of retail centre visitation density |
 
 ---
 
 ## Data Sources
 
-| Data | Path |
+All data files are stored outside the repository and referenced via absolute paths in `simulation/config.py`:
+
+| Data | Description |
 |---|---|
-| Consumer agents | `Model/Utility/test_consumer_agents_bulk_prepared_with_trips.parquet` |
-| Bulk utility scores | `Model/Utility/utility_scores_bulk.parquet` |
-| Convenience utility scores | `Model/Utility/utility_scores_convenience.parquet` |
-| Retail centre geometry + amenities | `Model/Retail Centre Data/retail_centre_type_counts.gpkg` |
-| NTS trip frequencies | `Model/Distance/Data/NTS/Cleaned_NTS_Data.csv` |
+| `utility_scores_<type>.parquet` | Pre-computed (household × retail centre) utility matrices for 6 trip types |
+| `retail_centre_type_counts.gpkg` | Retail centre geometries and amenity binary flags |
+| `final_transport_times.parquet` | Postcode-to-RetailCentre travel time lookup (Drive) |
+| `Cleaned_NTS_Data.csv` | National Travel Survey trip frequency data |

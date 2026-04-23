@@ -22,8 +22,9 @@ centres by store type (Foodstore / Convenience Store) before selecting.
 import os
 
 # --- Directories ---
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))   # Retail_ABM/
-MODEL_DIR = os.path.dirname(BASE_DIR)                    # Model/
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))   # simulation/
+PROJECT_ROOT = os.path.dirname(BASE_DIR)                    # Retail_ABM/
+MODEL_DIR    = os.path.dirname(PROJECT_ROOT)                # Model/
 
 # --- Simulation Mode ---
 TEST_MODE = False  # Set to True to use files in 'Utility/testing/'
@@ -47,8 +48,8 @@ RETAIL_CENTRES_GPKG = os.path.join(MODEL_DIR, "Retail Centre Data",
                                    "retail_centre_type_counts.gpkg")
 
 # --- Output ---
-OUTPUT_DIR    = os.path.join(BASE_DIR, "outputs")
-DATA_LOCAL_DIR = os.path.join(BASE_DIR, "data_local")
+OUTPUT_DIR     = os.path.join(PROJECT_ROOT, "outputs")
+DATA_LOCAL_DIR = os.path.join(PROJECT_ROOT, "data_local")
 
 # --- Model Constants ---
 DAILY_CONSUMPTION_MEAN = 50.0   # Mean grocery units consumed per day
