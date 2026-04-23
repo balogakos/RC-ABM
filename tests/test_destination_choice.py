@@ -52,7 +52,9 @@ class TestDestinationChoice(unittest.TestCase):
 
     def test_softmax_probability_distribution(self):
         # Sample test: if C1 has utility 1.0 and C2 has 0.1
+        # Patch BOTH the local config and the one imported by agent
         config.SOFTMAX_BETA = 1.0
+        agent.config.SOFTMAX_BETA = 1.0
         
         # Create 1000 agents who all see C1= utility 1.0, C2= utility 0.1
         n_sample = 1000

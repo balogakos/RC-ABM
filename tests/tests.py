@@ -421,7 +421,9 @@ class TestRetailCentreEvaluation(unittest.TestCase):
         # Assert C1 starts at 1.0
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.0)
         
-        messages = agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices)
+        # Need to provide amenities for the evaluation logic
+        amenities = {'Foodstore': pd.Series([1, 1, 1, 1], index=self.centres)}
+        messages = agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities)
         
         # C1 should receive a boost (1.10)
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.10)
