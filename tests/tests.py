@@ -409,10 +409,10 @@ class TestRetailCentreEvaluation(unittest.TestCase):
                 visits.append({'Day': 1, 'Retail_Centre': c, 'Trip_Type': 'service'})
         self.visits_df = pd.DataFrame(visits)
         
-        # Initial Utility Matrix (average) with 1.0 for everyone
+        # Initial Utility Matrix (bulk_drive) with 1.0 for everyone
         self.agent_ids = [0, 1, 2] # Dummy agents
         self.utility_matrices = {
-            'average': make_utility_matrix(self.agent_ids, self.centres, np.ones((3, 4)))
+            'bulk_drive': make_utility_matrix(self.agent_ids, self.centres, np.ones((3, 4)))
         }
 
     def test_evaluate_retail_centres_bottom_10_boosts_utility(self):
@@ -422,11 +422,11 @@ class TestRetailCentreEvaluation(unittest.TestCase):
         tracker = {}
         amenities = {'Foodstore': pd.Series([1, 1, 1, 1], index=self.centres)}
         agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities, tracker=tracker)
-        self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.0) # No boost yet
+        self.assertEqual(self.utility_matrices['bulk_drive'].loc[0, 'C1'], 1.0) # No boost yet
         
         # Second consecutive failure: triggers boost
         agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities, tracker=tracker)
-        self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.10)
+        self.assertEqual(self.utility_matrices['bulk_drive'].loc[0, 'C1'], 1.10)
         # C2, C3 are doing fine -> no boost
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C2'], 1.0)
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C3'], 1.0)
