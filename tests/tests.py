@@ -328,8 +328,8 @@ class TestDestinationDistribution(unittest.TestCase):
         _, consumers = make_agents(n, prob_comparison=1.0)
         agent_ids = consumers['household'].values
 
-        # High centre has 3x utility. Use valid keys (comparison_drive)
-        vals = np.column_stack([np.ones(n), np.full(n, 3.0)])
+        # High centre has 3x utility. Use log values so that exp(beta*util) yields 3:1 ratio
+        vals = np.column_stack([np.full(n, np.log(1.0)), np.full(n, np.log(3.0))])
         utility_matrices = {
             'comparison_drive': make_utility_matrix(agent_ids, centres, vals),
         }
