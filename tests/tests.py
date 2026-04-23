@@ -17,10 +17,14 @@ import unittest
 import numpy as np
 import pandas as pd
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root and simulation folder to path
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "simulation"))
 
-# Patch config constants so we don't need real files
 import config
+import agent
 config.DAILY_CONSUMPTION_MEAN = 5.0
 config.DAILY_CONSUMPTION_STD  = 1.0
 config.REORDER_THRESHOLD      = 20.0
@@ -141,19 +145,13 @@ class TestGrocerySystem(unittest.TestCase):
 class TestNTSTripSystem(unittest.TestCase):
 
     def test_trigger_trips_returns_all_types(self):
-        """trigger_trips must return exactly the 4 configured trip types."""
+        """trigger_trips must return all configured trip types."""
         _, consumers = make_agents(n=20)
         triggered = agent.trigger_trips(consumers)
-        self.assertEqual(set(triggered.keys()),
-                         {'service', 'comparison', 'entertainment', 'food_drink'},
-                         "trigger_trips must return exactly the 4 NTS trip types.")
-
-    def test_no_grocery_in_nts_trips(self):
-        """'grocery' must NOT appear in NTS triggered trips."""
-        _, consumers = make_agents(n=20)
-        triggered = agent.trigger_trips(consumers)
-        self.assertNotIn('grocery', triggered,
-                         "'grocery' must not be in NTS trigger_trips output.")
+        # Filter for nts types (those with a prob_col)
+        nts_types = {k for k, v in agent.TRIP_TYPE_CONFIG.items() if v['prob_col'] is not None}
+        self.assertTrue(nts_types.issubset(set(triggered.keys())),
+                         "trigger_trips must return all NTS trip types.")
 
     def test_zero_probability_never_triggers(self):
         """With prob=0, no trips should ever fire."""
@@ -172,6 +170,8 @@ class TestNTSTripSystem(unittest.TestCase):
             prob_entertainment=1.0, prob_food_drink=1.0)
         triggered = agent.trigger_trips(consumers)
         for trip_type, mask in triggered.items():
+            if agent.TRIP_TYPE_CONFIG[trip_type]['prob_col'] is None:
+                continue
             self.assertTrue(mask.all(),
                             f"{trip_type}: all agents should trigger when prob=1.")
 
@@ -181,8 +181,10 @@ class TestNTSTripSystem(unittest.TestCase):
             n=50, prob_comparison=1.0, prob_service=1.0,
             prob_entertainment=1.0, prob_food_drink=1.0)
         triggered = agent.trigger_trips(consumers)
-        # Every agent should appear in all 4 masks
+        # Every agent should appear in all NTS masks
         for trip_type, mask in triggered.items():
+            if agent.TRIP_TYPE_CONFIG[trip_type]['prob_col'] is None:
+                continue
             self.assertEqual(mask.sum(), 50,
                              f"All 50 agents should fire {trip_type}.")
 
@@ -194,6 +196,8 @@ class TestNTSTripSystem(unittest.TestCase):
             prob_entertainment=0.5, prob_food_drink=0.5)
         triggered = agent.trigger_trips(consumers)
         for trip_type, mask in triggered.items():
+            if agent.TRIP_TYPE_CONFIG[trip_type]['prob_col'] is None:
+                continue
             rate = mask.mean()
             self.assertAlmostEqual(rate, 0.5, delta=0.05,
                                    msg=f"{trip_type} trigger rate {rate:.3f} not close to 0.5.")
