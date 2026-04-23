@@ -288,7 +288,7 @@ class TestAmenityFilters(unittest.TestCase):
             'Cafe':       [0, 0, 0],
             'Restaurant': [0, 0, 0],
         })
-        dests = agent.choose_destination_for_trip(
+        dests, modes, scores = agent.choose_destination_for_trip(
             'food_drink', self.all_triggered, self.consumers,
             self.utility_matrices, amenity)
         self.assertTrue(dests.isna().all(),
@@ -328,10 +328,10 @@ class TestDestinationDistribution(unittest.TestCase):
         _, consumers = make_agents(n, prob_comparison=1.0)
         agent_ids = consumers['household'].values
 
-        # High centre has 3x utility
+        # High centre has 3x utility. Use valid keys (comparison_drive)
         vals = np.column_stack([np.ones(n), np.full(n, 3.0)])
         utility_matrices = {
-            'average': make_utility_matrix(agent_ids, centres, vals),
+            'comparison_drive': make_utility_matrix(agent_ids, centres, vals),
         }
         amenity = make_amenity_binary(centres, {'Retail': [1, 1]})
         all_triggered = pd.Series(True, index=consumers.index)
