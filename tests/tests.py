@@ -56,6 +56,8 @@ def make_agents(n=50, stock=50.0, consumption=5.0,
     # Override stock to a known value for deterministic tests
     state_df['Stock'] = stock
     state_df['Consumption_Rate'] = consumption
+    # Ensure AgentID matches index for feedback tests
+    state_df['AgentID'] = state_df.index
     return state_df, consumers_sampled
 
 
@@ -402,11 +404,11 @@ class TestRetailCentreEvaluation(unittest.TestCase):
         }, index=self.centres)
         
         # Build 1 day of sparse visits DataFrame
-        # Trip type 'service'. C1=1 visit, C2=20 visits, C3=20 visits, C4=1 visit
+        # Trip type 'grocery'. C1=1 visit, C2=20 visits, C3=20 visits, C4=1 visit
         visits = []
         for c, count in zip(self.centres, [1, 20, 20, 1]):
             for _ in range(count):
-                visits.append({'Day': 1, 'Retail_Centre': c, 'Trip_Type': 'service'})
+                visits.append({'Day': 1, 'Retail_Centre': c, 'Trip_Type': 'grocery'})
         self.visits_df = pd.DataFrame(visits)
         
         # Initial Utility Matrix (bulk_drive) with 1.0 for everyone
