@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Data and Outputs
+outputs/
+*.parquet
+*.png
+*.gpkg
+*.csv
+*.xlsx
+
+# Config/Environment
+.env
+config_override.py
+
+# IDEs
+.vscode/
+.idea/
