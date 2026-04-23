@@ -25,12 +25,15 @@ import os
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))   # simulation/
 PROJECT_ROOT = os.path.dirname(BASE_DIR)                    # Retail_ABM/
 MODEL_DIR    = os.path.dirname(PROJECT_ROOT)                # Model/
+DATA_LOCAL   = os.path.join(MODEL_DIR, "data_local", "liverpool")
+INPUT_DIR    = os.path.join(DATA_LOCAL, "inputs")
+PROCESSED_DIR = os.path.join(DATA_LOCAL, "processed")
 
 # --- Simulation Mode ---
 TEST_MODE = False  # Set to True to use files in 'Utility/testing/'
 
 # --- Input: Utility Scores (also serve as agent data) ---
-UTILITY_DIR = os.path.join(MODEL_DIR, "Utility")
+UTILITY_DIR = PROCESSED_DIR
 if TEST_MODE:
     UTILITY_DIR = os.path.join(UTILITY_DIR, "testing")
 
@@ -38,18 +41,17 @@ if TEST_MODE:
 UTILITY_SCORES_AVG = os.path.join(UTILITY_DIR, "utility_scores_average.parquet")
 
 # --- Input: NTS ---
-NTS_PATH = r'C:\Users\sgabalog\Documents\P3\Model\Distance\Data\NTS\Cleaned_NTS_Data.csv'
+NTS_PATH = os.path.join(INPUT_DIR, "NTS", "Cleaned_NTS_Data.csv")
 
 # --- Input: Transport Times (Postcode -> Walk/Drive/PT minutes) ---
-TRANSPORT_TIMES_PATH = os.path.join(MODEL_DIR, "Distance", "Results", "final_transport_times.parquet")
+TRANSPORT_TIMES_PATH = os.path.join(PROCESSED_DIR, "final_transport_times.parquet")
 
 # --- Input: Retail Centres ---
-RETAIL_CENTRES_GPKG = os.path.join(MODEL_DIR, "Retail Centre Data",
-                                   "retail_centre_type_counts.gpkg")
+RETAIL_CENTRES_GPKG = os.path.join(PROCESSED_DIR, "retail_centre_type_counts.gpkg")
 
 # --- Output ---
 OUTPUT_DIR     = os.path.join(PROJECT_ROOT, "outputs")
-DATA_LOCAL_DIR = os.path.join(PROJECT_ROOT, "data_local")
+DATA_LOCAL_DIR = DATA_LOCAL
 
 # --- Model Constants ---
 DAILY_CONSUMPTION_MEAN = 50.0   # Mean grocery units consumed per day
