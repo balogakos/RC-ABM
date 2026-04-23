@@ -420,6 +420,7 @@ class TestRetailCentreEvaluation(unittest.TestCase):
         
         # First failure: creates a strike
         tracker = {}
+        amenities = {'Foodstore': pd.Series([1, 1, 1, 1], index=self.centres)}
         agent.evaluate_retail_centres(self.visits_df, self.retail_gdf, self.utility_matrices, amenities, tracker=tracker)
         self.assertEqual(self.utility_matrices['average'].loc[0, 'C1'], 1.0) # No boost yet
         
