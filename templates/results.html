@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retail ABM – Results</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #0f0c29;
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 18px 36px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        header h1 {
+            font-size: 1.4rem;
+            background: linear-gradient(90deg, #a78bfa, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header a {
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            color: #fff;
+            transition: background 0.2s;
+        }
+
+        header a:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            padding: 24px 36px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            flex: 1;
+            min-width: 160px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 20px;
+        }
+
+        .stat-card .val {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #a78bfa, #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-card .lbl {
+            margin-top: 4px;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.45);
+        }
+
+        #map {
+            width: 100%;
+            height: calc(100vh - 200px);
+            min-height: 400px;
+        }
+
+        .legend {
+            background: rgba(15, 12, 41, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: #fff;
+            font-size: 0.82rem;
+        }
+
+        .legend-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 12px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>🏪 Retail ABM – Results</h1>
+        <a href="/">← New Simulation</a>
+    </header>
+
+    <div class="stats-bar">
+        <div class="stat-card">
+            <div class="val">{{ stats.total_visits }}</div>
+            <div class="lbl">Total Visits</div>
+        </div>
+        <div class="stat-card">
+            <div class="val">{{ stats.unique_centres }}</div>
+            <div class="lbl">Retail Centres Visited</div>
+        </div>
+        <div class="stat-card">
+            <div class="val">{{ stats.num_agents }}</div>
+            <div class="lbl">Agents Simulated</div>
+        </div>
+        <div class="stat-card">
+            <div class="val">{{ stats.days }}</div>
+            <div class="lbl">Days</div>
+        </div>
+        <div class="stat-card">
+            <div class="val">{{ stats.top_centre }}</div>
+            <div class="lbl">Most Visited Centre</div>
+        </div>
+        <div class="stat-card">
+            <div class="val">{{ stats.top_count }}</div>
+            <div class="lbl">Visits to Top Centre</div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        const geojson = {{ geojson | safe }};
+
+        // Calculate visit range for color scaling
+        let counts = geojson.features.map(f => f.properties.Visit_Count || 0);
+        let maxVisits = Math.max(...counts.filter(c => c > 0));
+
+        // Color scale: grey -> purple -> yellow
+        function getColor(v) {
+            if (v === 0) return '#374151';
+            const t = v / maxVisits;
+            if (t < 0.25) return '#5b21b6';
+            if (t < 0.5) return '#7c3aed';
+            if (t < 0.75) return '#a855f7';
+            return '#fbbf24';
+        }
+
+        function style(feature) {
+            const v = feature.properties.Visit_Count || 0;
+            return {
+                fillColor: getColor(v),
+                weight: 0.5,
+                opacity: 1,
+                color: 'rgba(255,255,255,0.15)',
+                fillOpacity: v > 0 ? 0.85 : 0.3
+            };
+        }
+
+        function onEachFeature(feature, layer) {
+            const p = feature.properties;
+            const visits = p.Visit_Count || 0;
+            layer.bindPopup(`
+                <div style="font-family:sans-serif;min-width:180px">
+                    <b style="font-size:1rem">${p.centre_typ || 'Retail Centre'}</b><br>
+                    <hr style="margin:6px 0;border-color:#ccc">
+                    <b>RC ID:</b> ${p.RC_ID || 'N/A'}<br>
+                    <b>Visits:</b> ${visits}<br>
+                    <b>Classification:</b> ${p.category_n || 'N/A'}<br>
+                    <b>Local Authority:</b> ${p.LocalAutho || 'N/A'}
+                </div>
+            `);
+            layer.on({
+                mouseover: (e) => { e.target.setStyle({ weight: 2, color: '#fff' }); },
+                mouseout: (e) => { geoLayer.resetStyle(e.target); }
+            });
+        }
+
+        // Init map centred on data
+        const map = L.map('map', { zoomControl: true });
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; CartoDB',
+            maxZoom: 19
+        }).addTo(map);
+
+        const geoLayer = L.geoJSON(geojson, { style, onEachFeature }).addTo(map);
+
+        // Fit to bounds
+        if (geoLayer.getBounds().isValid()) {
+            map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
+        }
+
+        // Legend
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = () => {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = `
+                <div class="legend-title">Visit Density</div>
+                <div class="legend-item"><span class="legend-color" style="background:#374151"></span> No visits</div>
+                <div class="legend-item"><span class="legend-color" style="background:#5b21b6"></span> Low</div>
+                <div class="legend-item"><span class="legend-color" style="background:#7c3aed"></span> Medium-Low</div>
+                <div class="legend-item"><span class="legend-color" style="background:#a855f7"></span> Medium-High</div>
+                <div class="legend-item"><span class="legend-color" style="background:#fbbf24"></span> High</div>
+            `;
+            return div;
+        };
+        legend.addTo(map);
+    </script>
+</body>
+
+</html>
