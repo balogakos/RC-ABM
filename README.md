@@ -15,15 +15,12 @@ The RC-ABM simulates how households in a study region make decisions about **whe
 1. **Grocery Replenishment (Stock-Based):** Agents maintain a household stock of grocery goods that depletes daily at an individually calibrated rate. When stock falls below a threshold, a shopping trip is triggered.
 2. **Frequency-Based NTS Trips (Probability-Based):** Non-grocery trip types—Service, Comparison, Entertainment, and Food & Drink—are sampled daily against per-agent probabilities derived from the National Travel Survey.
 
-A key feature is **Trip Chaining**: if an agent triggers multiple trips on the same day, there is a 50% chance they consolidate them into a single visit to a multi-purpose retail centre, provided one exists that satisfies all their requirements.
-
-Destination choice is governed by pre-computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence. A **Softmax** sampling function is applied at the point of choice, ensuring probabilistic selection while weighting higher-utility alternatives.
+Destination choice is governed by computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence. A **Softmax** sampling function is applied at the point of choice, ensuring probabilistic selection while weighting higher-utility alternatives.
 
 ---
 
 ## Key Features
 
-- **Trip Chaining**: Multi-purpose trips are simulated via a stochastic chaining mechanism, where agents may consolidate two or more trip types into a single visit.
 - **Joint Mode-Destination Choice**: Transport mode and destination are chosen simultaneously, emerging from a combined utility landscape rather than being pre-assigned.
 - **Amenity Filtering**: Each trip type is constrained to retail centres offering the relevant facilities (e.g., a Comparison trip requires a centre with a `Retail` presence flag).
 - **Adaptive Feedback Loop**: Agent utility scores are updated after each visit (+5% / -5% stochastic reinforcement), allowing visit patterns to evolve over the simulation period.
@@ -113,17 +110,9 @@ Each simulation day, for every active agent:
 | **Stock-Based** | `Stock < REORDER_THRESHOLD` | `grocery` (bulk or convenience) |
 | **Probability-Based** | `rand() < daily_prob` | `service`, `comparison`, `entertainment`, `food_drink` |
 
-### Trip Chaining
-
-If an agent is triggered for more than one trip on a given day, a **50/50 coin flip** determines whether they:
-- **Chain**: Attempt a single visit to one retail centre that can satisfy all trip requirements simultaneously (amenity AND logic across all trip types).
-- **Split**: Proceed to independent destinations for each trip (current default behaviour).
-
-If no single centre can satisfy the combined amenity requirements, the agent falls back to split trips.
-
 ### Destination Choice
 
-For each trip (or chain), destination selection follows this sequence:
+For each trip, destination selection follows this sequence:
 
 1. **Amenity Filter**: Zero out utilities for all centres lacking the required facility.
 2. **Modifier Application**: Apply neighbourhood conformity, distance sensitivity, and any active intervention boosts.
@@ -167,7 +156,21 @@ All data files are stored outside the repository and referenced via absolute pat
 
 | Data | Description |
 |---|---|
-| `utility_scores_<type>.parquet` | Pre-computed (household × retail centre) utility matrices for 6 trip types |
+| `utility_scores_<type>.parquet` | Computed (household × retail centre) utility matrices for 6 trip types |
 | `retail_centre_type_counts.gpkg` | Retail centre geometries and amenity binary flags |
 | `final_transport_times.parquet` | Postcode-to-RetailCentre travel time lookup (Drive) |
 | `Cleaned_NTS_Data.csv` | National Travel Survey trip frequency data |
+
+---
+
+## Technical Details
+
+### Architecture & Performance
+The RC-ABM is built on a **fully vectorised architecture** using Python's scientific stack (NumPy and Pandas). Unlike traditional agent-based frameworks that iterate over individual agent objects, this model performs operations on monolithic arrays representing the entire population. This approach allows the simulation to scale to 650,000+ agents while maintaining execution times of just a few seconds per day.
+
+### Why Mesa was not used
+While [Mesa](https://mesa.readthedocs.io/) is a popular framework for Python ABMs, it was deliberately avoided for this project for the following reasons:
+
+1. **Overhead of Object-Oriented Agents**: Mesa's "agent-as-an-object" pattern incurs significant memory and CPU overhead when dealing with hundreds of thousands of agents. Each agent in Mesa is a Python object with its own state and methods, which slows down iteration.
+2. **Vectorisation Potential**: The decision logic in retail destination choice is highly mathematical (Softmax sampling over utility matrices). Scientific libraries like NumPy and Pandas are designed to handle these operations across entire datasets simultaneously. By "flattening" the agents into rows of a DataFrame, we leverage C-optimised routines for choice logic.
+3. **Control over Choice Logic**: Retail modelling often requires complex joint-choice algorithms that are more easily implemented and debugged using standard matrix operations than by attempting to shoehorn them into the Mesa `Step` scheduler.
