@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import config
 from simulation.core.constants import GROCERY_MODES, TRANSPORT_MODES, TRIP_TYPE_CONFIG
 
 def rank_retail_centres(visits_df, retail_gdf, amenity_binary):
@@ -75,10 +76,12 @@ def rank_retail_centres(visits_df, retail_gdf, amenity_binary):
                 spatial_rank = 0.5
 
             # --- Weighting ---
-            size_weight = np.interp(poi_count, [10, 200], [0.3, 0.7])
+            weights = getattr(config, 'RETAIL_PEER_SIZE_WEIGHT', [0.3, 0.7])
+            size_weight = np.interp(poi_count, [10, 200], weights)
             final_rank = (size_rank * size_weight) + (spatial_rank * (1.0 - size_weight))
 
-            if final_rank <= 0.10:
+            failure_limit = getattr(config, 'RETAIL_FAILURE_THRESHOLD', 0.10)
+            if final_rank <= failure_limit:
                 failed_categories[centre].append(trip_type)
 
     return failed_categories, participating_categories

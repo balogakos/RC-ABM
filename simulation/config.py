@@ -85,6 +85,21 @@ DIFFUSION_BOOST_MULTIPLIER = 1.05
 #   1.0 = total conformity (agents always pick the best local option)
 NEIGHBOURHOOD_CONFORMITY = 0.0
 
+# --- Retail Centre Performance & Intervention ---
+# Percentile below which a centre is considered "failing" relative to peers
+RETAIL_FAILURE_THRESHOLD = 0.10
+
+# Multiplier applied to centre utilities during a welfare intervention
+RETAIL_INTERVENTION_BOOST = 1.10
+
+# Maximum cumulative multiplier a centre can receive from interventions
+RETAIL_BOOST_CEILING = 1.30
+
+# Weighting range for Size-Peers vs Spatial-Peers [Min_Weight, Max_Weight]
+#   Higher value = judge more by size/POI count
+#   Lower value  = judge more by nearby competitors
+RETAIL_PEER_SIZE_WEIGHT = [0.3, 0.7]
+
 # --- Destination Choice Temperature ---
 # Controls how strongly agents prefer the highest-utility (centre × mode) option.
 # Uses softmax: P(c,m) ∝ exp(SOFTMAX_BETA × utility)

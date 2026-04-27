@@ -1,3 +1,4 @@
+import config
 from simulation.core.constants import GROCERY_MODES, TRANSPORT_MODES
 
 def apply_intervention_policy(failed_categories, participating_categories, 
@@ -31,15 +32,18 @@ def apply_intervention_policy(failed_categories, participating_categories,
             if tracker[centre] >= 2:
                 # Trigger Boost
                 current_total_boost = cumulative_boosts.get(centre, 1.0)
-                if current_total_boost < 1.30:
+                ceiling = getattr(config, 'RETAIL_BOOST_CEILING', 1.30)
+                boost_val = getattr(config, 'RETAIL_INTERVENTION_BOOST', 1.10)
+
+                if current_total_boost < ceiling:
                     for _, m_keys in trip_types_to_check.items():
                         for m_key in m_keys:
                             matrix = utility_matrices.get(m_key)
                             if matrix is not None and centre in matrix.columns:
                                 col_idx = matrix.columns.get_loc(centre)
-                                matrix.values[:, col_idx] *= 1.10
+                                matrix.values[:, col_idx] *= boost_val
                     
-                    cumulative_boosts[centre] = current_total_boost * 1.10
+                    cumulative_boosts[centre] = current_total_boost * boost_val
                     messages.append(
                         f"Intervention: Centre {centre} boosted (Failing {n_failed}/{n_participating} categories for 2 periods). "
                         f"Total Boost: {cumulative_boosts[centre]:.2f}x")
