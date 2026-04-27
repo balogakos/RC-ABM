@@ -21,8 +21,8 @@ PROCESSED_DIR = os.path.join(DATA_DIR, 'processed')
 BATCH_SIZE = 1000
 
 CONSUMER_FILES = {
-    'bulk':        os.path.join(PROCESSED_DIR, 'consumer_agents_bulk.parquet'),
-    'convenience': os.path.join(PROCESSED_DIR, 'consumer_agents_convenience.parquet'),
+    'bulk':        os.path.join(INPUT_DIR, 'Consumer_Agents', 'consumer_agents_bulk.parquet'),
+    'convenience': os.path.join(INPUT_DIR, 'Consumer_Agents', 'consumer_agents_convenience.parquet'),
 }
 RETAIL_FILE = os.path.join(PROCESSED_DIR, 'retail_centres_processed.parquet')
 
@@ -151,7 +151,11 @@ def get_weight_value(w_col_name, default_name, df_params):
     if 'W_total' in df_params.columns:
         return df_params['W_total'].values.reshape(-1, 1)
     return np.full((len(df_params), 1), 0.5)
-
+def process_trip_type(trip_name, profile, df_rc, rc_ids, param_data_dict):
+    """
+    Calculates multi-mode utility scores for a specific trip type across all agents.
+    Ensures centres with 0 relevant amenities result in 0 utility.
+    """
     c_file = CONSUMER_FILES[profile['consumer_file']]
     parquet_path = c_file
     if not os.path.exists(parquet_path): 
@@ -217,6 +221,31 @@ def get_weight_value(w_col_name, default_name, df_params):
         conc_multiplier = 0.5 + 0.5 * np.sqrt(adj_conc)
 
 
+    # --- PRE-LOAD TRANSPORT DATA ---
+    transport_path = os.path.join(PROCESSED_DIR, 'final_transport_times.parquet')
+    if not os.path.exists(transport_path):
+        print(f"Warning: Transport times not found at {transport_path}")
+        return None, None
+    print(f"  Pre-loading transport times from {transport_path}...")
+    df_trans = pd.read_parquet(transport_path)
+    
+    # We now calculate utilities for 3 modes: walk, drive, pt
+    # Each mode has a different sensitivity (half-life in minutes)
+    MODES_CONFIG = {
+        'walk':  {'col': 'Walk',  'h': 15.0, 'mu_col': 'prob_walk'},
+        'drive': {'col': 'Drive', 'h': 5.0,  'mu_col': 'prob_drive'},
+        'pt':    {'col': 'PT',    'h': 10.0, 'mu_col': 'prob_pt'}
+    }
+
+    # Load ID mapping once
+    mapping_path = os.path.join(PROCESSED_DIR, 'centre_merging_map.parquet')
+    mapping_dict = {}
+    if os.path.exists(mapping_path):
+        mapping = pd.read_parquet(mapping_path)
+        mapping['RC_ID'] = mapping['RC_ID'].astype(str).str.replace(r'\.0$', '', regex=True)
+        mapping['Leader_RC_ID'] = mapping['Leader_RC_ID'].astype(str).str.replace(r'\.0$', '', regex=True)
+        mapping_dict = mapping.set_index('RC_ID')['Leader_RC_ID'].to_dict()
+
     for i, batch in enumerate(batch_iter):
         df_chunk = batch.to_pandas()
         batch_hh = df_chunk['household'].values
@@ -264,75 +293,87 @@ def get_weight_value(w_col_name, default_name, df_params):
             # Add size bonus directly to the amenity sum before normalization
             amenity_sum += size_weight * size_score
 
+        # REQUIREMENT: Ensure utility is 0 if NO relevant amenities exist for this trip type
+        # We create a mask: True where any required amenity > 0
+        amenity_mask = np.zeros(len(rc_ids), dtype=bool)
+        for am in profile['amenities']:
+            if am in absolute_matrix:
+                amenity_mask |= (absolute_matrix[am] > 0)
+            elif am in df_rc.columns:
+                amenity_mask |= (df_rc.loc[rc_ids, am].values > 0)
+        
+        # Zero out centres that don't have any of the required amenities
+        amenity_sum[:, ~amenity_mask] = 0.0
+
         # Normalize Amenity Score per agent to [0, 1]
         amenity_max = np.nanmax(amenity_sum, axis=1, keepdims=True)
         amenity_max[amenity_max == 0] = 1.0
         amenity_score = amenity_sum / amenity_max
 
-        # Collect transport data matrix (now using final_transport_times)
-        transport_path = os.path.join(PROCESSED_DIR, 'final_transport_times.parquet')
-        if not os.path.exists(transport_path):
-            print(f"Warning: Transport times not found at {transport_path}")
-            return None, None
+        # --- TRANSPORT & FINAL UTILITY CALCULATION (Multi-Mode) ---
+        mode_scores_dfs = []
+        
+        for m_name, m_cfg in MODES_CONFIG.items():
+            t_col = m_cfg['col']
+            if t_col not in df_trans.columns:
+                continue
+                
+            # Merge batch postcodes with transport times for this mode
+            batch_trans = df_chunk[['Postcode']].reset_index().merge(df_trans[['Postcode', t_col]], on='Postcode', how='left')
+            dicts = batch_trans[t_col].apply(safe_eval).tolist()
             
-        # Optimization: only load column needed for current agent batch
-        # For simplicity in this refactor, we load and reindex
-        df_trans = pd.read_parquet(transport_path)
-        
-        # Merge batch postcodes with transport times
-        batch_df = df_chunk[['Postcode']].reset_index().merge(df_trans[['Postcode', 'Drive']], on='Postcode', how='left')
-        
-        dicts = batch_df['Drive'].apply(safe_eval).tolist()
-        
-        # REMAP OLD IDs TO NEW LEADER IDs if mapping exists
-        mapping_path = os.path.join(PROCESSED_DIR, 'centre_merging_map.parquet')
-        mapping_dict = {}
-        if os.path.exists(mapping_path):
-            mapping = pd.read_parquet(mapping_path)
-            # Standardise both sides of the mapping
-            mapping['RC_ID'] = mapping['RC_ID'].astype(str).str.replace(r'\.0$', '', regex=True)
-            mapping['Leader_RC_ID'] = mapping['Leader_RC_ID'].astype(str).str.replace(r'\.0$', '', regex=True)
-            mapping_dict = mapping.set_index('RC_ID')['Leader_RC_ID'].to_dict()
-
-        # Optimization: Map IDs at the dictionary level before creating the DataFrame
-        # This is much faster and avoids the 'axis=1 groupby' deprecation warning.
-        remapped_dicts = []
-        for d in dicts:
-            new_d = {}
-            for k, v in d.items():
-                k_str = str(k).replace('.0', '')
-                leader = mapping_dict.get(k_str, k_str)
-                # If we have multiple components mapping to one leader, take the minimum duration
-                if leader not in new_d or v < new_d[leader]:
-                    new_d[leader] = v
-            remapped_dicts.append(new_d)
-
-        # Create DataFrame and reindex to match simulation's retail centres
-        dur_df = pd.DataFrame.from_records(remapped_dicts, index=batch_hh)
-        dur_mat = dur_df.reindex(columns=rc_ids).values.astype(float)
-
-        # 3. Calculate Final Utilities with Exponential Decay
-        # h_drive is the half-life parameter for driving (minutes).
-        h_drive = 5.0
-        
-        # t_im^min is the minimum travel time from agent i to any centre.
-        with np.errstate(all='ignore'):
-            t_im_min = np.nanmin(dur_mat, axis=1, keepdims=True)
-        t_im_min[np.isnan(t_im_min)] = 0.0
-        
-        # exponential decay logic: T = exp( - (1.5 * ln(2))/h_m (t_ij - t_i^min))
-        travel_indicator = np.exp(- (1.5 * np.log(2) / h_drive) * (dur_mat - t_im_min))
-        travel_indicator[np.isnan(travel_indicator)] = 0.0
-        
-        # final utility: T * amenity_score
-        u_mat = travel_indicator * amenity_score
-
-        # Global Normalization: Scale scores for this agent to [0, 1]
-        u_max = np.nanmax(u_mat, axis=1, keepdims=True)
-        u_max[u_max == 0] = 1.0
-        final_u = u_mat / u_max
-        
-        scores_df = pd.DataFrame(final_u, index=batch_hh, columns=rc_ids)
+            # Remap IDs
+            remapped_dicts = []
+            for d in dicts:
+                new_d = {}
+                for k, v in d.items():
+                    k_str = str(k).replace('.0', '')
+                    leader = mapping_dict.get(k_str, k_str)
+                    if leader not in new_d or v < new_d[leader]:
+                        new_d[leader] = v
+                remapped_dicts.append(new_d)
+            
+            # Create Duration Matrix
+            dur_df = pd.DataFrame.from_records(remapped_dicts, index=batch_hh)
+            dur_mat = dur_df.reindex(columns=rc_ids).values.astype(float)
+            
+            # Exponential Decay Accessibility (A_ijm)
+            h_m = m_cfg['h']
+            with np.errstate(all='ignore'):
+                t_im_min = np.nanmin(dur_mat, axis=1, keepdims=True)
+            t_im_min[np.isnan(t_im_min)] = 0.0
+            
+            # Accessibility: exp( - (1.5 * ln(2))/h_m (t_ij - t_i^min))
+            accessibility = np.exp(- (1.5 * np.log(2) / h_m) * (dur_mat - t_im_min))
+            accessibility[np.isnan(accessibility)] = 0.0
+            
+            # Agent Mode Propensity (mu_im)
+            # Use agent-specific probability from the dataset
+            mu_col = m_cfg['mu_col']
+            if mu_col in df_chunk.columns:
+                mu_im = df_chunk[mu_col].values.reshape(-1, 1)
+            else:
+                mu_im = 0.33  # Default fallback if column missing
+                
+            # Final Utility for this mode: V = U * A * mu
+            v_mat = (accessibility * amenity_score) * mu_im
+            
+            # Local Normalization for this mode
+            v_max = np.nanmax(v_mat, axis=1, keepdims=True)
+            v_max[v_max == 0] = 1.0
+            final_v = v_mat / v_max
+            
+            # Create DataFrame with suffixed columns: {RC_ID}_{mode}
+            mode_cols = [f"{rc}_{m_name}" for rc in rc_ids]
+            mode_df = pd.DataFrame(final_v, index=batch_hh, columns=mode_cols)
+            mode_scores_dfs.append(mode_df)
+            
+        # Combine all modes for this batch
+        if not mode_scores_dfs:
+            print("  Warning: No valid transport modes found for this batch.")
+            continue
+            
+        scores_df = pd.concat(mode_scores_dfs, axis=1)
         
         # Keep only metadata safely
         base_cols = [c for c in CONSUMER_META_COLS if c in df_chunk.columns]
@@ -383,6 +424,7 @@ def save_output(metadata_df, scores_df, filename):
 
 def main():
     print(f"Building Trip-Specific Datasets. TEST_MODE={TEST_MODE}, BATCH_SIZE={BATCH_SIZE}")
+    print(f"Looking for retail file at: {RETAIL_FILE}")
 
     res = load_and_prep_retail_data()
     if res is None: return

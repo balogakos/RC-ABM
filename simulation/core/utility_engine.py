@@ -108,7 +108,8 @@ def joint_mode_destination_choice(aligned_mode_utils, shoppers_idx):
     modes_used    = pd.Series(None, index=shoppers_idx, dtype=object)
     chosen_scores = pd.Series(0.0,  index=shoppers_idx)
 
-    all_modes = [m for m in ['drive']
+    from .constants import TRANSPORT_MODES
+    all_modes = [m for m in TRANSPORT_MODES
                  if m in aligned_mode_utils
                  and aligned_mode_utils[m] is not None
                  and not aligned_mode_utils[m].empty]

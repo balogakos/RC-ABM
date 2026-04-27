@@ -1,6 +1,6 @@
 # Shared constants and configurations for trip types
 
-TRANSPORT_MODES = ['drive']
+TRANSPORT_MODES = ['walk', 'drive', 'pt']
 GROCERY_MODES   = ['bulk', 'convenience']
 
 TRIP_TYPE_CONFIG = {
