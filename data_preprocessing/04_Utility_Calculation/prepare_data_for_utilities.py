@@ -348,10 +348,10 @@ def process_trip_type(trip_name, profile, df_rc, rc_ids, param_data_dict):
             accessibility[np.isnan(accessibility)] = 0.0
             
             # Agent Mode Propensity (mu_im)
-            # Use agent-specific probability from the dataset
+            # Use agent-specific probability from the parameter dataset
             mu_col = m_cfg['mu_col']
-            if mu_col in df_chunk.columns:
-                mu_im = df_chunk[mu_col].values.reshape(-1, 1)
+            if mu_col in df_params.columns:
+                mu_im = df_params[mu_col].values.reshape(-1, 1)
             else:
                 mu_im = 0.33  # Default fallback if column missing
                 

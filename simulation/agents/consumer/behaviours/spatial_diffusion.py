@@ -4,13 +4,14 @@ import config
 # NOTE: demographic_similarity_scores is moved to word_of_mouth.py or utility_engine.py
 from simulation.core.utility_engine import demographic_similarity_scores
 
-def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices,
-                                  threshold_visits=3, boost_multiplier=1.05):
+def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
     """
     Applies spatial diffusion of preferences by Postcode Sector (first 3 chars).
     Identifies the most popular retail centre per area and boosts utility for 
     agents living in that area.
     """
+    threshold_visits = getattr(config, 'DIFFUSION_THRESHOLD_VISITS', 3)
+    boost_multiplier = getattr(config, 'DIFFUSION_BOOST_MULTIPLIER', 1.05)
     if visits_df.empty or 'Postcode' not in attributes_df.columns:
         return []
 

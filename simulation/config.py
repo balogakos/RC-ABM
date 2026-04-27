@@ -73,6 +73,18 @@ DEMOGRAPHIC_DIFFUSION_WEIGHT = 1.0
 # Larger values  → gentler drop-off (moderate similarity still carries influence).
 DEMOGRAPHIC_BANDWIDTH = 0.5
 
+# --- Social Influence & Diffusion ---
+# Minimum visits in a postcode sector to trigger a "trending" centre
+DIFFUSION_THRESHOLD_VISITS = 3
+
+# The utility boost applied to centres that are trending in a neighbourhood
+DIFFUSION_BOOST_MULTIPLIER = 1.05
+
+# Neighbourhood Conformity ("Echo Chamber" effect)
+#   0.0 = no local influence
+#   1.0 = total conformity (agents always pick the best local option)
+NEIGHBOURHOOD_CONFORMITY = 0.0
+
 # --- Destination Choice Temperature ---
 # Controls how strongly agents prefer the highest-utility (centre × mode) option.
 # Uses softmax: P(c,m) ∝ exp(SOFTMAX_BETA × utility)
