@@ -27,7 +27,12 @@ import sys
 import pandas as pd
 import numpy as np
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root to sys.path so we can find simulation/config.py
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SIM_PATH = os.path.join(ROOT_DIR, "simulation")
+if SIM_PATH not in sys.path:
+    sys.path.append(SIM_PATH)
+
 import config
 
 # NTS column → friendly name (grocery excluded — handled by stock system)

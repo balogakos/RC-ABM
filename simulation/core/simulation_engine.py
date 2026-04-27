@@ -1,0 +1,178 @@
+import pandas as pd
+import numpy as np
+import time
+from simulation.agents.consumer.consumer_population import ConsumerPopulation
+from simulation.agents.retail_centre.retail_manager import RetailManager
+from simulation.core.utility_engine import apply_feedback
+from simulation.core.constants import TRANSPORT_MODES, TRIP_TYPE_CONFIG
+
+class SimulationEngine:
+    def __init__(self, consumers_df, utility_matrices, amenity_binary, tt_lookup):
+        self.consumers_df = consumers_df
+        self.utility_matrices = utility_matrices
+        self.amenity_binary = amenity_binary
+        self.tt_lookup = tt_lookup
+        
+        self.population = None
+        self.retail_manager = None
+
+    def run(self, num_agents, days, eval_freq, log_callback=None):
+        def log(msg):
+            if log_callback:
+                log_callback(msg)
+            else:
+                print(msg)
+
+        log(f"Initialising {num_agents} agents over {days} days...")
+        self.population = ConsumerPopulation(num_agents, self.consumers_df)
+        self.retail_manager = RetailManager(self.amenity_binary)
+
+        all_visits = []
+
+        for day in range(1, days + 1):
+            log(f"Day {day}/{days}...")
+
+            # 1. Consumption & Need Detection
+            self.population.consume()
+            needs_grocery = self.population.check_grocery_need()
+            grocery_mode_series = self.population.choose_shopping_mode(needs_grocery)
+            nts_triggered = self.population.trigger_nts_trips()
+
+            # 2. Record Online Grocery
+            online_mask = needs_grocery & (grocery_mode_series == 'online')
+            if online_mask.any():
+                idx = self.population.state_df[online_mask].index
+                all_visits.append(pd.DataFrame({
+                    'Day': day, 'AgentID': self.population.state_df.loc[idx, 'AgentID'].values,
+                    'Postcode': self.population.state_df.loc[idx, 'Postcode'].values,
+                    'Trip_Type': 'grocery', 'Retail_Centre': 'ONLINE',
+                    'Grocery_Mode': 'online', 'Transport_Mode': None,
+                    'Travel_Time_Min': 0.0, 'Utility_Modifier': 1.0, 'Utility_Score': 0.0
+                }))
+
+            # 3. Trip Chaining Logic
+            trips_to_place = {t: mask.copy() for t, mask in nts_triggered.items()}
+            trips_to_place['grocery'] = needs_grocery & grocery_mode_series.isin(['bulk', 'convenience'])
+
+            trip_counts = pd.Series(0, index=self.population.state_df.index)
+            for t, mask in trips_to_place.items():
+                trip_counts += mask.astype(int)
+            
+            chain_candidates = self.population.state_df.index[trip_counts > 1]
+            will_chain = pd.Series(False, index=self.population.state_df.index)
+            if not chain_candidates.empty:
+                will_chain.loc[chain_candidates] = np.random.rand(len(chain_candidates)) < 0.5
+            
+            if will_chain.any():
+                cb = pd.Series([[] for _ in range(len(self.population.state_df))], index=self.population.state_df.index)
+                for t, mask in trips_to_place.items():
+                    for i in self.population.state_df.index[mask & will_chain]:
+                        cb[i].append(t)
+                
+                cb_tuples = cb[will_chain].apply(tuple)
+                for combo_tuple, idx_series in cb_tuples.groupby(cb_tuples):
+                    combo_list = list(combo_tuple)
+                    shoppers_idx = idx_series.index
+                    dests, modes, scores = self.population.choose_chained_destinations(
+                        combo_list, shoppers_idx, grocery_mode_series,
+                        self.utility_matrices, self.amenity_binary)
+                    
+                    valid = dests.notna()
+                    if valid.any():
+                        v_idx = dests[valid].index
+                        pc_series = self.population.state_df.loc[v_idx, 'Postcode']
+                        tm_series = modes.loc[v_idx].fillna('drive')
+                        tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
+                        
+                        for t_type in combo_list:
+                            util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
+                            f_mults = pd.Series(1.0, index=v_idx)
+                            for tmode in TRANSPORT_MODES:
+                                tseg = (modes.loc[v_idx] == tmode)
+                                if tseg.any():
+                                    s_idx = v_idx[tseg]
+                                    key = f"{util_p}_{tmode}"
+                                    if key in self.utility_matrices:
+                                        f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
+                            
+                            all_visits.append(pd.DataFrame({
+                                'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
+                                'Postcode': pc_series.values, 'Trip_Type': t_type,
+                                'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
+                                'Transport_Mode': modes.loc[v_idx].values, 'Travel_Time_Min': tt_series.values,
+                                'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
+                            }))
+                            trips_to_place[t_type].loc[v_idx] = False
+
+            # 4. Independent Trips
+            for t_type, mask in trips_to_place.items():
+                if not mask.any(): continue
+                
+                if t_type == 'grocery':
+                    dests, modes, scores = self.population.choose_destinations(mask, grocery_mode_series, self.utility_matrices, self.amenity_binary)
+                else:
+                    dests, modes, scores = self.population.choose_nts_destinations(t_type, mask, self.utility_matrices, self.amenity_binary)
+                
+                valid = dests.notna()
+                if valid.any():
+                    v_idx = dests[valid].index
+                    pc_series = self.population.state_df.loc[v_idx, 'Postcode']
+                    tm_series = modes.loc[v_idx].fillna('drive')
+                    tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
+                    
+                    util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
+                    f_mults = pd.Series(1.0, index=v_idx)
+                    for tmode in TRANSPORT_MODES:
+                        tseg = (modes.loc[v_idx] == tmode)
+                        if tseg.any():
+                            s_idx = v_idx[tseg]
+                            key = f"{util_p}_{tmode}"
+                            if key in self.utility_matrices:
+                                f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
+                                
+                    all_visits.append(pd.DataFrame({
+                        'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
+                        'Postcode': pc_series.values, 'Trip_Type': t_type,
+                        'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
+                        'Transport_Mode': modes.loc[v_idx].values, 'Travel_Time_Min': tt_series.values,
+                        'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
+                    }))
+
+            self.population.replenish_stock(needs_grocery)
+
+            # 5. Evaluation & Social Influence
+            if day % eval_freq == 0:
+                log(f"Evaluating retail centres (Day {day})...")
+                start_day = day - eval_freq + 1
+                period_visits = [df for df in all_visits if df['Day'].iloc[0] >= start_day]
+                if period_visits:
+                    eval_df  = pd.concat(period_visits, ignore_index=True)
+                    messages = self.retail_manager.evaluate_centres(eval_df, self.utility_matrices)
+                    for msg in messages: log(msg)
+
+                    diffusion_msgs = self.population.apply_social_influence(eval_df, self.utility_matrices)
+                    for msg in diffusion_msgs: log(msg)
+
+        return all_visits
+
+    def _lookup_travel_times(self, postcode_series, transport_mode_series, dest_series):
+        if not self.tt_lookup:
+            return pd.Series(0.0, index=postcode_series.index)
+            
+        pcs = postcode_series.values
+        tms = transport_mode_series.values
+        rcs = dest_series.values
+        out = np.zeros(len(pcs), dtype=np.float32)
+
+        for i in range(len(pcs)):
+            mode_data = self.tt_lookup.get(tms[i], {})
+            pc_data   = mode_data.get(pcs[i], None)
+            
+            if pc_data is None:
+                out[i] = np.nan
+            elif isinstance(pc_data, dict):
+                key = str(rcs[i])
+                out[i] = pc_data.get(key, np.nan)
+            else:
+                out[i] = float(pc_data)
+        return pd.Series(out, index=postcode_series.index)

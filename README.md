@@ -34,29 +34,23 @@ Destination choice is governed by computed **utility scores** for each (househol
 ```
 RC-ABM/
 │
-├── simulation/                  # Core model engine
-│   ├── main.py                  # GUI entry point and daily simulation loop
-│   ├── agent.py                 # All agent logic (vectorised NumPy/Pandas)
-│   ├── config.py                # File paths and model constants
-│   ├── assign_trip_frequencies.py   # Assigns NTS trip probabilities to agents (run once)
-│   └── visualization.py         # Generates visitation maps and spatial analytics
+├── simulation/                  # Core model engine (Modular Architecture)
+│   ├── main.py                  # GUI entry point (Tkinter)
+│   ├── agents/                  # Agent populations and behaviors
+│   │   ├── consumer/            # Consumer population & individual behaviors
+│   │   └── retail_centre/       # Retail centre tracking & interventions
+│   ├── core/                    # Simulation engine, math, and path resolution
+│   ├── config.py                # Model constants
+│   └── visualization.py         # Spatial analytics and mapping
+│
+├── data_preprocessing/          # Data pipeline and preparation
+│   └── assign_trip_frequencies.py   # Assigns NTS probabilities to agents
 │
 ├── website/                     # Streamlit web interface
-│   ├── app.py                   # Streamlit dashboard (run/visualise from browser)
-│   ├── templates/               # HTML templates (Flask fallback)
-│   └── static/                  # Static assets
+│   └── app.py                   # Dashboards and interactive visualization
 │
-├── notebooks/                   # Exploratory analysis and result validation
-│   ├── analysis_centre_makeup.ipynb
-│   ├── analysis_results_notebook.ipynb
-│   ├── latest_visit_mapping.ipynb
-│   └── testing_results.ipynb
-│
-├── tests/                       # Unit tests and verification scripts
-│   ├── tests.py
-│   └── _verify.py
-│
-├── outputs/                     # Simulation outputs (gitignored)
+├── outputs/                     # Simulation results (Parquet & PNG)
+├── tests/                       # Unit and integration tests
 ├── .gitignore
 └── README.md
 ```
@@ -78,7 +72,7 @@ pip install pandas numpy geopandas pyarrow streamlit plotly pydeck
 Run this once whenever the underlying agent data changes. It assigns NTS trip frequency probabilities to each household:
 
 ```bash
-python simulation/assign_trip_frequencies.py
+python data_preprocessing/assign_trip_frequencies.py
 ```
 
 ### 3. Run the Desktop Simulation (Tkinter GUI)
