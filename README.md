@@ -16,6 +16,10 @@ Agents can trigger a range of trips, including  Grocery, Service, Comparison, En
 
 Destination choice is governed by computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence
 
+This work is part of my PhD project, an agent-based model of retail centres, at the Geographic Data Science Lab at the University of Liverpool and is partnered with the Liverpool City Region Combined Authority.
+
+The project is supervised by Dr. Ron Mahabir, Dr. Les Dolega, and Dr Gabriele Filomena. 
+
 ---
 
 ## Key Features
