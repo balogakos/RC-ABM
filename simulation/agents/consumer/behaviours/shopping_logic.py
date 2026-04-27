@@ -4,8 +4,8 @@ import config
 from simulation.core.constants import TRIP_TYPE_CONFIG
 
 def check_shopping_need(state_df):
-    """Returns a boolean Series: True where Stock < REORDER_THRESHOLD."""
-    return state_df['Stock'] < config.REORDER_THRESHOLD
+    """Returns a boolean Series: True where Stock < Shopping_Threshold."""
+    return state_df['Stock'] < state_df['Shopping_Threshold']
 
 def choose_mode(attributes_df, shopping_mask):
     """

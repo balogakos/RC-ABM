@@ -16,22 +16,15 @@ class ConsumerPopulation:
         else:
             self.attributes = attributes_df.sample(n=num_agents, replace=False).reset_index(drop=True)
 
-        # Initialize dynamic state
+        # Initialize dynamic state from attributes_df columns
         self.state_df = pd.DataFrame({
-            'AgentID':         self.attributes['household'].values
-                               if 'household' in self.attributes.columns
-                               else range(num_agents),
-            'Postcode':        self.attributes['Postcode'].values
-                               if 'Postcode' in self.attributes.columns
-                               else 'UNKNOWN',
-            'Stock':           np.random.uniform(50, 100, num_agents),
-            'Consumption_Rate': np.clip(
-                                   np.random.normal(config.DAILY_CONSUMPTION_MEAN,
-                                                    config.DAILY_CONSUMPTION_STD,
-                                                    num_agents),
-                                   0.5, None),
-            'Last_Shop_Day':   -1,
-            'Shopping_Mode':   None,
+            'AgentID':            self.attributes['household'].values if 'household' in self.attributes.columns else range(num_agents),
+            'Postcode':           self.attributes['Postcode'].values if 'Postcode' in self.attributes.columns else 'UNKNOWN',
+            'Stock':              self.attributes['stock_level'].values if 'stock_level' in self.attributes.columns else np.random.uniform(50, 100, num_agents),
+            'Consumption_Rate':   self.attributes['consumption_rate'].values if 'consumption_rate' in self.attributes.columns else np.clip(np.random.normal(config.DAILY_CONSUMPTION_MEAN, config.DAILY_CONSUMPTION_STD, num_agents), 0.5, None),
+            'Shopping_Threshold': self.attributes['shopping_threshold'].values if 'shopping_threshold' in self.attributes.columns else config.REORDER_THRESHOLD,
+            'Last_Shop_Day':      -1,
+            'Shopping_Mode':      None,
         })
 
     def consume(self):
