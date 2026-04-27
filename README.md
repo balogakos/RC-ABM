@@ -120,19 +120,6 @@ For each trip, destination selection follows this sequence:
 
 ---
 
-## Configuration
-
-All key parameters are set in `simulation/config.py`:
-
-| Parameter | Default | Description |
-|---|---|---|
-| `REORDER_THRESHOLD` | `20.0` | Grocery stock level that triggers a shopping trip |
-| `MAX_STOCK_CAPACITY` | `100.0` | Maximum stock a household can hold |
-| `DAILY_CONSUMPTION_MEAN` | `50.0` | Mean daily grocery consumption rate |
-| `SOFTMAX_BETA` | `5.0` | Destination choice temperature (higher = more deterministic) |
-| `DEMOGRAPHIC_DIFFUSION_WEIGHT` | `1.0` | Strength of demographic homophily in spatial diffusion |
-| `DEMOGRAPHIC_BANDWIDTH` | `0.5` | Gaussian decay width for demographic similarity scoring |
-
 ---
 
 ## Outputs
