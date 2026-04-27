@@ -10,12 +10,11 @@
 
 ## Overview
 
-The RC-ABM simulates how households in a study region make decisions about **where to shop**, **what for**, and **how they get there**. Each agent (household) is endowed with demographic attributes drawn from real data and makes daily shopping decisions driven by two independent systems:
+The RC-ABM simulates how households in a study region make decisions about **where to shop**, **what for**, and **how they get there**. Each agent is endowed with demographic attributes drawn from real data, parameterised with the results of an online study and makes daily shopping decisions driven by two independent systems:
 
-1. **Grocery Replenishment (Stock-Based):** Agents maintain a household stock of grocery goods that depletes daily at an individually calibrated rate. When stock falls below a threshold, a shopping trip is triggered.
-2. **Frequency-Based NTS Trips (Probability-Based):** Non-grocery trip types—Service, Comparison, Entertainment, and Food & Drink—are sampled daily against per-agent probabilities derived from the National Travel Survey.
+Agents can trigger a range of trips, including  Grocery, Service, Comparison, Entertainment, and Food & Drink which are sampled daily against per-agent probabilities derived from the National Travel Survey.
 
-Destination choice is governed by computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence. A **Softmax** sampling function is applied at the point of choice, ensuring probabilistic selection while weighting higher-utility alternatives.
+Destination choice is governed by computed **utility scores** for each (household × retail centre) pair, incorporating exponential distance decay and centre-specific amenity presence
 
 ---
 
