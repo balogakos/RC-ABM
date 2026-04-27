@@ -47,9 +47,12 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
 
         temp_df = relevant_utils.copy()
         temp_df['_group'] = group_key
-        local_maxes = (temp_df.groupby('_group')
-                              .transform('max')
-                              .drop(columns=['_group']))
+        local_maxes = temp_df.groupby('_group').transform('max')
+        
+        # Clean up internal grouping column if pandas hasn't already removed it
+        if '_group' in local_maxes.columns:
+            local_maxes = local_maxes.drop(columns=['_group'])
+            
         relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * conformity)
 
     # Distance Sensitivity (beta scale)
