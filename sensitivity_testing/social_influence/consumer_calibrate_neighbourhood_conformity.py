@@ -16,7 +16,7 @@ def run_calibration():
     runner = SensitivityRunner(n_agents=2000)
     
     # Values to test (0.0 = no influence, 1.0 = total conformity)
-    test_values = [0.0, 0.1, 0.25, 0.5, 0.8]
+    test_values = [0.8, 0.85, 0.9, 0.95, 1.0]
     results = []
     
     for val in test_values:
