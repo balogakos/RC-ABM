@@ -61,17 +61,17 @@ TICKS_PER_DAY          = 1     # One simulation step = one day
 CONVENIENCE_REFILL_RANGE = [0.3, 0.5]
 BULK_REFILL_RANGE        = [0.8, 1.0]
 
-# --- Demographic Diffusion Parameters ---
-# Controls homophily: how strongly age + income similarity weights the spread of
-# retail preferences between households.
-#   0.0 = purely spatial (original behaviour — all neighbours treated equally)
-#   1.0 = full demographic weighting (only similar households influence each other)
-DEMOGRAPHIC_DIFFUSION_WEIGHT = 0.8
+# --- Social Influence & Diffusion Configuration ---
+# If True, every agent is assigned a unique, random personality (0.0 to 1.0)
+# for Diffusion Weight, Bandwidth, and Conformity. This removes the need 
+# for global calibration and simulates a diverse population.
+RANDOMIZE_SOCIAL_ATTRIBUTES = True
 
-# Gaussian decay bandwidth in normalised [0, 1] age-income space.
-# Smaller values → steeper drop-off (only near-identical demographics spread).
-# Larger values  → gentler drop-off (moderate similarity still carries influence).
-DEMOGRAPHIC_BANDWIDTH = 0.5
+# [FALLBACK GLOBALS] - These are only used if RANDOMIZE_SOCIAL_ATTRIBUTES is False
+# or if an agent is missing its specific trait.
+DEMOGRAPHIC_DIFFUSION_WEIGHT = 0.8
+DEMOGRAPHIC_BANDWIDTH        = 0.5
+NEIGHBOURHOOD_CONFORMITY     = 0.2
 
 # --- Social Influence & Diffusion ---
 # Threshold ratio: percentage of a postcode sector's population that must visit
@@ -84,11 +84,6 @@ DIFFUSION_MIN_VISITS = 3
 
 # The utility boost applied to centres that are trending in a neighbourhood
 DIFFUSION_BOOST_MULTIPLIER = 1.05
-
-# Neighbourhood Conformity ("Echo Chamber" effect)
-#   0.0 = no local influence
-#   1.0 = total conformity (agents always pick the best local option)
-NEIGHBOURHOOD_CONFORMITY = 0.0
 
 # --- Retail Centre Performance & Intervention ---
 # Percentile below which a centre is considered "failing" relative to peers

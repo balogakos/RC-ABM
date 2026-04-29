@@ -9,6 +9,11 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# Ensure simulation directory is in path for config imports
+SIM_DIR = ROOT_DIR / "simulation"
+if str(SIM_DIR) not in sys.path:
+    sys.path.insert(0, str(SIM_DIR))
+
 import config
 from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
@@ -60,10 +65,15 @@ def load_simulation_data(n_agents=None):
             meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
             consumers_df = df[meta_cols].copy()
 
-    # Load Amenity Binary
-    amenity_path = base_dir / 'retail_centre_amenity_binary.parquet'
-    amenity_binary = pd.read_parquet(amenity_path)
-    amenity_binary.index = amenity_binary.index.astype(str)
+    # Load Amenity Binary (replicated from main.py)
+    import geopandas as gpd
+    gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
+    gdf['RC_ID'] = gdf['RC_ID'].apply(_clean_rc_id)
+    gdf = gdf.set_index('RC_ID')
+    
+    amenity_cols = ['Foodstore', 'Personal Service', 'Professional Services', 'Entertainment', 'Convenience Store', 'Retail', 'Restaurant', 'Cafe']
+    amenity_binary = {col: (gdf[col] > 0).astype(float) for col in amenity_cols if col in gdf.columns}
+    amenity_binary = pd.DataFrame(amenity_binary)
 
     # Load Transport Times
     tt_df = pd.read_parquet(config.TRANSPORT_TIMES_PATH)

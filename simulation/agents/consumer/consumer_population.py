@@ -28,6 +28,18 @@ class ConsumerPopulation:
             'Last_Shop_Day':      -1,
             'Shopping_Mode':      None,
         })
+
+        # Agent-specific social behavior traits
+        if getattr(config, 'RANDOMIZE_SOCIAL_ATTRIBUTES', False):
+            # Randomized personality (0.0 to 1.0)
+            self.state_df['Diffusion_Weight']    = np.random.uniform(0.0, 1.0, num_agents)
+            self.state_df['Diffusion_Bandwidth'] = np.random.uniform(0.0, 1.0, num_agents)
+            self.state_df['Conformity_Weight']   = np.random.uniform(0.0, 1.0, num_agents)
+        else:
+            # Global defaults for all agents
+            self.state_df['Diffusion_Weight']    = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.8)
+            self.state_df['Diffusion_Bandwidth'] = getattr(config, 'DEMOGRAPHIC_BANDWIDTH', 0.5)
+            self.state_df['Conformity_Weight']   = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.2)
         
         # Starting stock randomized between 0 and Capacity
         self.state_df['Stock'] = np.random.uniform(0, self.state_df['Capacity'])

@@ -16,9 +16,18 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
         relevant_utils[top_center] *= intervention_mult
 
     # Neighbourhood Conformity ("Echo Chamber" effect)
-    conformity = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.0)
-    if conformity > 0.0 and has_postcode and 'Postcode' in state_df_or_attribs.columns:
-        demo_weight = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.0)
+    # Use agent-specific conformity weight if available, else fallback to config
+    if 'Conformity_Weight' in state_df_or_attribs.columns:
+        conformity = state_df_or_attribs.loc[shoppers_idx, 'Conformity_Weight']
+    else:
+        conformity = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.0)
+
+    if (isinstance(conformity, pd.Series) or conformity > 0.0) and has_postcode and 'Postcode' in state_df_or_attribs.columns:
+        # Use agent-specific diffusion weight if available
+        if 'Diffusion_Weight' in state_df_or_attribs.columns:
+            demo_weight = state_df_or_attribs.loc[shoppers_idx, 'Diffusion_Weight']
+        else:
+            demo_weight = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.0)
         agent_pcs   = state_df_or_attribs.loc[shoppers_idx, 'Postcode'].str[:3].fillna('UNK')
 
         has_age = 'age_years'      in state_df_or_attribs.columns
@@ -53,7 +62,11 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
         if '_group' in local_maxes.columns:
             local_maxes = local_maxes.drop(columns=['_group'])
             
-        relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * conformity)
+        if isinstance(conformity, pd.Series):
+            # Element-wise lerp: (1-c)*U + c*max_U
+            relevant_utils = relevant_utils.mul(1 - conformity, axis=0) + local_maxes.mul(conformity, axis=0)
+        else:
+            relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * conformity)
 
     # Distance Sensitivity (beta scale)
     dist_sens = getattr(config, 'DISTANCE_SENSITIVITY', 1.0)
@@ -194,7 +207,9 @@ def demographic_similarity_scores(demo_lookup, influencer_ids, target_ids,
     diffs    = tgt_norm.values - centroid
     distances = np.sqrt((diffs ** 2).sum(axis=1))
 
-    return np.exp(-distances / max(bandwidth, 1e-6))
+    # Support for agent-specific bandwidth (vector)
+    bw = np.array(bandwidth)
+    return np.exp(-distances / np.maximum(bw, 1e-6))
 
 
 def apply_feedback(utility_matrix, agent_ids, chosen_centres):
