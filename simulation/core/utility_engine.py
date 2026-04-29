@@ -33,7 +33,8 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
         has_age = 'age_years'      in state_df_or_attribs.columns
         has_inc = 'salary_yearly'  in state_df_or_attribs.columns
 
-        if demo_weight > 0.0 and has_age and has_inc:
+        is_demo_active = (demo_weight > 0.0).any() if isinstance(demo_weight, pd.Series) else demo_weight > 0.0
+        if is_demo_active and has_age and has_inc:
             # Age bands: young (<30), mid (30-50), senior (>50)
             ages = state_df_or_attribs.loc[shoppers_idx, 'age_years'].fillna(35)
             age_bands = pd.cut(ages, bins=[0, 30, 50, 150],

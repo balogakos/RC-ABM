@@ -24,7 +24,7 @@ from simulation.core.constants import TRANSPORT_MODES
 import visualization
 
 # --- Configuration Override ---
-TEST_MODE = False
+TEST_MODE = True
 
 def _clean_rc_id(x):
     try:
@@ -132,54 +132,72 @@ class RetailABMApp:
         self.root.update()
 
     def load_data(self, n_agents=None):
+        """Unified data loader for the Tkinter GUI using trip-specific files."""
+        # Use config to find the right directory, but allow override via local TEST_MODE
+        base_utility_dir = config.UTILITY_DIR
+        if TEST_MODE and "testing" not in str(base_utility_dir):
+            base_utility_dir = os.path.join(base_utility_dir, "testing")
+            
+        self.log(f"Loading 6 trip-specific datasets (Test Mode: {TEST_MODE})...")
+        
         utility_matrices = {}
         consumers = None
         trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
-        
-        base_utility_dir = paths.UTILITY_DIR
-        if TEST_MODE:
-            base_utility_dir = base_utility_dir / "testing"
             
-        self.log(f"Loading utility datasets from {base_utility_dir}...")
-
         for trip_type in trip_types:
-            file_path = base_utility_dir / f'utility_scores_{trip_type}.parquet'
-            if not file_path.exists():
+            file_path = os.path.join(base_utility_dir, f'utility_scores_{trip_type}.parquet')
+            if not os.path.exists(file_path):
                 raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
-                
+            
+            # FAST LOADING: Only read the first N rows instead of loading GBs of data
             if n_agents:
                 _pf = pq.ParquetFile(file_path)
                 df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
             else:
                 df = pd.read_parquet(file_path)
                 
-            meta_df, mode_dfs = _split_matrices(df)
+            # Extract matrices for each mode
+            suffixes = ['_walk', '_drive', '_pt']
+            for suf in suffixes:
+                mode = suf.lstrip('_')
+                cols = [c for c in df.columns if c.endswith(suf)]
+                if not cols: continue
+                
+                mat = df[cols].astype(np.float32)
+                mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
+                
+                # CRITICAL FIX: Ensure index is unique to prevent reindex row multiplication
+                mat.index = df['household']
+                if not mat.index.is_unique:
+                    mat = mat[~mat.index.duplicated(keep='first')]
+                    
+                utility_matrices[f'{trip_type}_{mode}'] = mat.fillna(0)
+
+            # The bulk dataset acts as our primary demographic source
             if trip_type == 'bulk':
-                consumers = meta_df
-                
-            for tmode, mat in mode_dfs.items():
-                utility_matrices[f'{trip_type}_{tmode}'] = mat
-                
-            import gc
-            del df
-            gc.collect()
+                meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
+                consumers = df[meta_cols].copy()
+                if not consumers['household'].is_unique:
+                    consumers = consumers.drop_duplicates(subset='household', keep='first')
 
         self.log("Loading retail centre amenity data...")
-        gdf = gpd.read_file(paths.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
+        gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
         gdf['RC_ID'] = gdf['RC_ID'].apply(_clean_rc_id)
         gdf = gdf.set_index('RC_ID')
-
-        amenity_cols = ['Foodstore', 'Personal Service', 'Professional Services', 'Entertainment', 'Convenience Store', 'Retail', 'Restaurant', 'Cafe']
+        amenity_cols = ['Foodstore', 'Personal Service', 'Professional Services',
+                        'Entertainment', 'Convenience Store', 'Retail', 'Restaurant', 'Cafe']
         amenity_binary = {col: (gdf[col] > 0).astype(float) for col in amenity_cols if col in gdf.columns}
+        amenity_binary = pd.DataFrame(amenity_binary)
 
-        self.log("Loading transport times lookup table...")
-        transport_times = pd.DataFrame()
-        if paths.TRANSPORT_TIMES_PATH.exists():
-            transport_times = pd.read_parquet(paths.TRANSPORT_TIMES_PATH)
-            if 'Postcode' in transport_times.columns:
-                transport_times = transport_times.set_index('Postcode')
+        self.log("Loading transport times...")
+        tt_lookup = {}
+        tt_path = getattr(config, 'TRANSPORT_TIMES_PATH', '')
+        if tt_path and os.path.exists(tt_path):
+            tt_df = pd.read_parquet(tt_path)
+            for col, mode in [('Walk', 'walk'), ('Drive', 'drive'), ('PT', 'pt')]:
+                if col in tt_df.columns:
+                    tt_lookup[mode] = {str(k): v for k, v in tt_df[col].items() if v is not None}
 
-        tt_lookup = _preprocess_transport_times(transport_times)
         return consumers, utility_matrices, amenity_binary, tt_lookup
 
     def run_simulation(self):
@@ -188,13 +206,21 @@ class RetailABMApp:
             days = int(self.days_var.get())
             eval_freq = int(self.eval_freq_var.get())
 
-            if self._base_data is None or self._loaded_n != num_agents_req:
-                raw = self.load_data(n_agents=num_agents_req)
-                self._base_data = raw
-                self._loaded_n = num_agents_req
+            # FORCE RESET: Always reload data to ensure no stale/duplicated data exists in memory
+            self.log(f"Initializing simulation for {num_agents_req} agents...")
+            raw = self.load_data(n_agents=num_agents_req)
+            self._base_data = raw
+            self._loaded_n = num_agents_req
 
             consumers, base_matrices, amenity_binary, tt_lookup = self._base_data
-            utility_matrices = {k: v.copy() for k, v in base_matrices.items()}
+            
+            # Defensive copy and final check for unique indices
+            utility_matrices = {}
+            for k, v in base_matrices.items():
+                if not v.index.is_unique:
+                    utility_matrices[k] = v[~v.index.duplicated(keep='first')].copy()
+                else:
+                    utility_matrices[k] = v.copy()
 
             # Thresholding
             THRESHOLD = 0.1

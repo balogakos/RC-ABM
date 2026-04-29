@@ -28,6 +28,7 @@ class ConsumerPopulation:
             'Last_Shop_Day':      -1,
             'Shopping_Mode':      None,
         })
+        self.state_df.index = range(num_agents)  # Force a clean, unique range index
 
         # Agent-specific social behavior traits
         if getattr(config, 'RANDOMIZE_SOCIAL_ATTRIBUTES', False):

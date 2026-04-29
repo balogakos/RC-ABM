@@ -31,38 +31,45 @@ def _clean_rc_id(x):
     return s[:-2] if s.endswith('.0') else s
 
 def load_simulation_data(n_agents=None):
-    """Standalone loader for ensemble runs."""
-    print(f"Loading utility dataset (Test Mode: {TEST_MODE})...")
+    """Standalone loader for ensemble runs using trip-specific files."""
+    print(f"Loading 6 trip-specific utility datasets from {config.UTILITY_DIR}...")
     
-    file_path = config.UTILITY_SCORES_AVG
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Missing consolidated utility dataset: {file_path}")
-        
-    df = pd.read_parquet(file_path)
-    if n_agents and len(df) > n_agents:
-        df = df.sample(n=n_agents, random_state=42)
-        
-    base_modes = {}
-    suffixes = ['_walk', '_drive', '_pt']
-    for suf in suffixes:
-        mode = suf.lstrip('_')
-        cols = [c for c in df.columns if c.endswith(suf)]
-        if not cols: continue
-        
-        mat = df[cols].astype(np.float32)
-        mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
-        mat.index = df['household']
-        base_modes[mode] = mat.fillna(0)
-
-    # Map the single average matrix to all trip types expected by the engine
-    utility_matrices = {}
     trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
-    for t_type in trip_types:
-        for mode, mat in base_modes.items():
-            utility_matrices[f"{t_type}_{mode}"] = mat
+    suffixes = ['_walk', '_drive', '_pt']
+    
+    utility_matrices = {}
+    consumers_df = None
 
-    meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
-    consumers_df = df[meta_cols].copy()
+    for trip_type in trip_types:
+        file_path = os.path.join(config.UTILITY_DIR, f'utility_scores_{trip_type}.parquet')
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
+            
+        df = pd.read_parquet(file_path)
+        if n_agents and len(df) > n_agents:
+            df = df.sample(n=n_agents, random_state=42)
+            
+        # Extract matrices
+        for suf in suffixes:
+            mode = suf.lstrip('_')
+            cols = [c for c in df.columns if c.endswith(suf)]
+            if not cols: continue
+            
+            mat = df[cols].astype(np.float32)
+            mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
+            
+            # CRITICAL FIX: Ensure index is unique to prevent reindex row multiplication
+            mat.index = df['household']
+            if not mat.index.is_unique:
+                mat = mat[~mat.index.duplicated(keep='first')]
+                
+            utility_matrices[f'{trip_type}_{mode}'] = mat.fillna(0)
+
+        if trip_type == 'bulk':
+            meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
+            consumers_df = df[meta_cols].copy()
+            if not consumers_df['household'].is_unique:
+                consumers_df = consumers_df.drop_duplicates(subset='household', keep='first')
 
 
     # Load Amenity Binary
