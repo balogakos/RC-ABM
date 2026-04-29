@@ -19,10 +19,12 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Configuration ---
-TEST_MODE = True  # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
-NUM_RUNS  = 5     # Number of iterations to average out uncertainty
+TEST_MODE = True    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
+NUM_RUNS  = 5       # Number of iterations to average out uncertainty
 DAYS      = 30
 EVAL_FREQ = 10
+PARALLEL  = True    # Run multiple simulations at once
+NUM_CORES = 4       # How many CPU cores to use (Check your RAM!)
 
 def _clean_rc_id(x):
     s = str(x)
@@ -65,7 +67,7 @@ def load_simulation_data(n_agents=None):
             meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
             consumers_df = df[meta_cols].copy()
 
-    # Load Amenity Binary (replicated from main.py)
+    # Load Amenity Binary
     import geopandas as gpd
     gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
     gdf['RC_ID'] = gdf['RC_ID'].apply(_clean_rc_id)
@@ -84,39 +86,63 @@ def load_simulation_data(n_agents=None):
 
     return consumers_df, utility_matrices, amenity_binary, tt_lookup
 
-def run_ensemble():
-    """Main execution loop for multiple runs."""
+def run_single_iteration(run_id):
+    """Worker function for a single simulation run."""
+    import time
+    print(f"--- [Run {run_id}] Initializing process... ---")
+    
+    # Load data locally in each process (safer for multiprocessing)
     n_agents = 100 if TEST_MODE else None
     consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents)
     
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
-    
     results_dir = Path(ROOT_DIR) / "multi_runs" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    for i in range(1, NUM_RUNS + 1):
-        print(f"\n>>> Starting Run {i}/{NUM_RUNS}...")
-        start_time = time.time()
+    start_time = time.time()
+    print(f"--- [Run {run_id}] Simulation started... ---")
+    
+    visits = engine.run(
+        num_agents=len(consumers_df), 
+        days=DAYS, 
+        eval_freq=EVAL_FREQ
+    )
+    
+    if visits:
+        df_visits = pd.concat(visits, ignore_index=True)
+        output_path = results_dir / f"run_{run_id}.parquet"
+        df_visits.to_parquet(output_path, index=False)
         
-        # Reset engine/seed implicitly by re-initializing or clear state
-        # In this ABM, re-running the engine's run() creates a new population.
-        visits = engine.run(
-            num_agents=len(consumers_df), 
-            days=DAYS, 
-            eval_freq=EVAL_FREQ
-        )
+        elapsed = time.time() - start_time
+        print(f"--- [Run {run_id}] COMPLETE in {elapsed:.1f}s. Saved to {output_path.name} ---")
+        return f"Run {run_id} Success"
+    else:
+        print(f"--- [Run {run_id}] FAILED (No visits generated) ---")
+        return f"Run {run_id} No Data"
+
+def run_ensemble():
+    """Main execution entry point."""
+    import time
+    from multiprocessing import Pool
+    
+    overall_start = time.time()
+    run_ids = list(range(1, NUM_RUNS + 1))
+    
+    if PARALLEL:
+        print(f"Starting Parallel Ensemble: {NUM_RUNS} runs on {NUM_CORES} cores...")
+        with Pool(processes=NUM_CORES) as pool:
+            results = pool.map(run_single_iteration, run_ids)
+    else:
+        print(f"Starting Sequential Ensemble: {NUM_RUNS} runs...")
+        results = [run_single_iteration(rid) for rid in run_ids]
         
-        # Process and save visits
-        if visits:
-            df_visits = pd.concat(visits, ignore_index=True)
-            output_path = results_dir / f"run_{i}.parquet"
-            df_visits.to_parquet(output_path, index=False)
-            
-            elapsed = time.time() - start_time
-            print(f"Run {i} complete. Saved to {output_path.name}. (Time: {elapsed:.1f}s)")
-        else:
-            print(f"Run {i} generated no visits.")
+    total_time = time.time() - overall_start
+    print(f"\n====================================================")
+    print(f"ENSEMBLE PIPELINE COMPLETE")
+    print(f"Total Time: {total_time/60:.2f} minutes")
+    print(f"Results Summary: {results}")
+    print(f"====================================================\n")
 
 if __name__ == "__main__":
-    import time
+    # Multiprocessing on Windows requires this check
     run_ensemble()
