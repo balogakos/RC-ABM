@@ -138,7 +138,7 @@ class SimulationEngine:
                         'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
                     }))
 
-            self.population.replenish_stock(needs_grocery)
+            self.population.replenish_stock(needs_grocery, grocery_mode_series)
 
             # 5. Evaluation & Social Influence
             if day % eval_freq == 0:

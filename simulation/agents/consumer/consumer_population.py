@@ -17,15 +17,20 @@ class ConsumerPopulation:
             self.attributes = attributes_df.sample(n=num_agents, replace=False).reset_index(drop=True)
 
         # Initialize dynamic state from attributes_df columns
+        # Note: stock_level from data is used as Capacity. 
+        # Initial Stock is randomized between 0 and Capacity.
         self.state_df = pd.DataFrame({
             'AgentID':            self.attributes['household'].values if 'household' in self.attributes.columns else range(num_agents),
             'Postcode':           self.attributes['Postcode'].values if 'Postcode' in self.attributes.columns else 'UNKNOWN',
-            'Stock':              self.attributes['stock_level'].values if 'stock_level' in self.attributes.columns else np.random.uniform(50, 100, num_agents),
-            'Consumption_Rate':   self.attributes['consumption_rate'].values if 'consumption_rate' in self.attributes.columns else np.clip(np.random.normal(config.DAILY_CONSUMPTION_MEAN, config.DAILY_CONSUMPTION_STD, num_agents), 0.5, None),
-            'Shopping_Threshold': self.attributes['shopping_threshold'].values if 'shopping_threshold' in self.attributes.columns else config.REORDER_THRESHOLD,
+            'Capacity':           self.attributes['stock_level'].values if 'stock_level' in self.attributes.columns else 100.0,
+            'Consumption_Rate':   self.attributes['consumption_rate'].values if 'consumption_rate' in self.attributes.columns else 10.0,
+            'Shopping_Threshold': self.attributes['shopping_threshold'].values if 'shopping_threshold' in self.attributes.columns else 20.0,
             'Last_Shop_Day':      -1,
             'Shopping_Mode':      None,
         })
+        
+        # Starting stock randomized between 0 and Capacity
+        self.state_df['Stock'] = np.random.uniform(0, self.state_df['Capacity'])
 
     def consume(self):
         """Daily stock reduction."""
@@ -62,9 +67,9 @@ class ConsumerPopulation:
             trip_list, shoppers_idx, grocery_modes, utility_matrices, amenity_binary, self.attributes
         )
 
-    def replenish_stock(self, shopping_mask):
-        """Refills stock after shopping."""
-        self.state_df = consumption.update_stock_after_shop(self.state_df, shopping_mask)
+    def replenish_stock(self, shopping_mask, grocery_modes):
+        """Refills stock after shopping based on trip type."""
+        self.state_df = consumption.update_stock_after_shop(self.state_df, shopping_mask, grocery_modes)
 
     def apply_social_influence(self, visits_df, utility_matrices):
         """Applies spatial diffusion (word-of-mouth)."""

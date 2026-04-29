@@ -54,12 +54,12 @@ OUTPUT_DIR     = os.path.join(PROJECT_ROOT, "outputs")
 DATA_LOCAL_DIR = DATA_LOCAL
 
 # --- Model Constants ---
-DAILY_CONSUMPTION_MEAN = 50.0   # Mean grocery units consumed per day
-DAILY_CONSUMPTION_STD  = 2.0   # Std dev of daily consumption
 TICKS_PER_DAY          = 1     # One simulation step = one day
 
-MAX_STOCK_CAPACITY = 100.0     # Maximum grocery stock an agent can hold
-REORDER_THRESHOLD  = 20.0      # Stock level below which a grocery trip is triggered
+# --- Replenishment & Stock Logic ---
+# Random refill ranges (multiplier of agent capacity)
+CONVENIENCE_REFILL_RANGE = [0.3, 0.5]
+BULK_REFILL_RANGE        = [0.8, 1.0]
 
 # --- Demographic Diffusion Parameters ---
 # Controls homophily: how strongly age + income similarity weights the spread of
