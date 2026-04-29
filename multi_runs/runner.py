@@ -14,8 +14,8 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Configuration ---
-TEST_MODE = True  # Set to False for FULL simulation (656k agents)
-NUM_RUNS  = 5
+TEST_MODE = True  # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
+NUM_RUNS  = 5     # Number of iterations to average out uncertainty
 DAYS      = 30
 EVAL_FREQ = 10
 
