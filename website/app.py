@@ -95,7 +95,7 @@ def _preprocess_transport_times(df):
 # Cached data loader  (runs ONCE per Streamlit session)
 # ---------------------------------------------------------------------------
 
-@st.cache_resource(show_spinner="Loading simulation data (first run only)…")
+@st.cache_resource(show_spinner="Loading datasets...")
 def _load_all_data(n_agents=None):
     """
     Reads parquets and builds static data structures.
@@ -271,12 +271,13 @@ def main():
         st.session_state.log_messages = []
         
     with st.sidebar:
-        st.header("⚙️ Configuration Panel")
+        st.header("Configuration Panel")
         
         # Organize settings into expanders for a cleaner UI
         with st.expander("Population & Time", expanded=True):
             num_agents = st.number_input("Number of Agents", min_value=1, max_value=656817, value=1000, step=100, help="Total households to simulate (Max: 656,817).")
             days = st.number_input("Days to Simulate", min_value=1, max_value=365, value=30, step=1, help="Simulation duration in days.")
+
             
         with st.expander("Social Dynamics", expanded=False):
             st.markdown("Control how agents are influenced by their peers.")
