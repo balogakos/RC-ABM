@@ -12,8 +12,7 @@ _PROJECT_ROOT = os.path.dirname(_HERE)
 _SIM_DIR = os.path.join(_PROJECT_ROOT, "simulation")
 sys.path.insert(0, _SIM_DIR)
 import config
-import agent
-from assign_trip_frequencies import assign_frequencies
+from simulation.core.simulation_engine import SimulationEngine
 import visualization
 
 def log_msg(msg):
@@ -213,203 +212,30 @@ def _cached_pydeck_map_v2(filtered_path, run_id, trip_type, tmode):
 def run_simulation(num_agents_req, days, status_text_placeholder, live_map_placeholder, progress_bar):
     consumers, utility_matrices, amenity_binary, tt_lookup = load_data(n_agents=num_agents_req)
 
-    n = len(consumers)
-    log_msg(f"Initialising {n} agents over {days} days…")
-
-    state_df, consumers_sampled = agent.initialize_agent_state(n, consumers)
-
-    # Persistent trackers for evaluation logic
-    underperformer_tracker = {}
-    cumulative_boosts = {}
-
-    # Load retail centres GeoDataFrame for evaluation
-    import geopandas as gpd
-    retail_gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
-    retail_gdf['RC_ID'] = retail_gdf['RC_ID'].apply(_clean_rc_id)
-    retail_gdf = retail_gdf.set_index('RC_ID')
-
-    def _lookup_tt(pc_series, tm_series, dest_series=None):
-        """
-        O(1) per-agent travel-time lookup using the pre-built nested dict.
-        ~10-100× faster than querying the raw DataFrame per call.
-        """
-        if not tt_lookup:
-            return pd.Series(0.0, index=pc_series.index)
-        pcs = pc_series.values
-        tms = tm_series.values
-        rcs = dest_series.values if dest_series is not None else [None] * len(pcs)
-        out = np.zeros(len(pcs), dtype=np.float32)
-        for i in range(len(pcs)):
-            mode_data = tt_lookup.get(tms[i], {})
-            pc_data   = mode_data.get(pcs[i], None)
-            
-            if pc_data is None:
-                # Postcode not in lookup at all
-                out[i] = np.nan
-            elif isinstance(pc_data, dict):
-                rc_key = str(rcs[i]) if rcs[i] is not None else None
-                if rc_key and rc_key in pc_data:
-                    out[i] = pc_data[rc_key]
-                else:
-                    # Specific RC not found — return NaN rather than guessing with the mean
-                    out[i] = np.nan
-            else:
-                try:
-                    out[i] = float(pc_data)
-                except Exception:
-                    out[i] = np.nan
-        return pd.Series(out, index=pc_series.index)
-
-
-    all_visits = []
-    track_ids = consumers_sampled.sample(n=min(10, len(consumers_sampled)))['household'].values
-    live_visits = []
-    pc_coords = visualization.load_postcode_coords()
-    rc_coords = visualization.load_centre_coords_v2()
-    home_postcodes = consumers_sampled.set_index('household')['Postcode'].to_dict()
-
-    for day in range(1, days + 1):
-        status_text_placeholder.text(f"Simulating Day {day}/{days}...")
-        progress_bar.progress(day / days)
-        day_trips = []
-
-        # A. Grocery trips
-        state_df      = agent.consume(state_df)
-        needs_grocery = agent.check_shopping_need(state_df)
-        if needs_grocery.any():
-            grocery_mode_series = agent.choose_mode(consumers_sampled, needs_grocery)
-            # Physical shops only (excludes online)
-            physical_mask = needs_grocery & grocery_mode_series.isin(['bulk', 'convenience'])
-            
-            # Jointly select mode and destination
-            destinations, transport_mode_series, utility_scores = agent.choose_destination(
-                state_df, physical_mask,
-                grocery_mode_series,
-                utility_matrices,
-                amenity_binary)
-
-            valid = destinations.notna() & (grocery_mode_series != 'online')
-            if valid.any():
-                idx = destinations[valid].index
-                pc_s  = state_df.loc[idx, 'Postcode']
-                tm_s  = transport_mode_series.loc[idx]
-                tt    = _lookup_tt(pc_s, tm_s, dest_series=destinations[valid])
+    engine = SimulationEngine(consumers_df=consumers, utility_matrices=utility_matrices, 
+                              amenity_binary=amenity_binary, tt_lookup=tt_lookup)
+                              
+    # Setup log callback to update Streamlit progress
+    def log_callback(msg):
+        status_text_placeholder.text(msg)
+        log_msg(msg)
+        if msg.startswith("Day "):
+            try:
+                # Parse "Day X/Y..."
+                parts = msg.split()[1].split('/')
+                current_day = int(parts[0])
+                total_days = int(parts[1].replace('...', ''))
+                progress_bar.progress(current_day / total_days)
+            except:
+                pass
                 
-                dt = pd.DataFrame({
-                    'Day':            day,
-                    'AgentID':        state_df.loc[idx, 'AgentID'].values,
-                    'Postcode':       pc_s.values,
-                    'Trip_Type':      'grocery',
-                    'Retail_Centre':  destinations[valid].values,
-                    'Grocery_Mode':   grocery_mode_series[valid].values,
-                    'Transport_Mode': transport_mode_series.loc[idx].values,
-                    'Travel_Time_Min': tt.values,
-                    'Utility_Score':  utility_scores.loc[idx].values
-                })
-                # Filter out distance anomalies (246 min artifacts)
-                dt = dt[dt['Travel_Time_Min'] < 240]
-                if not dt.empty:
-                    all_visits.append(dt)
-                    day_trips.append(dt)
-
-            state_df = agent.update_stock_after_shop(state_df, needs_grocery)
-
-        # B. NTS frequency-based trips
-        triggered_trips = agent.trigger_trips(consumers_sampled)
-
-        for trip_type, triggered_mask in triggered_trips.items():
-            if not triggered_mask.any():
-                continue
-
-            # Jointly select mode and destination for NTS trips
-            dests, modes_used, utility_scores = agent.choose_destination_for_trip(
-                trip_type, triggered_mask, consumers_sampled,
-                utility_matrices, amenity_binary)
-
-            valid = dests.notna()
-            if valid.any():
-                idx = dests[valid].index
-                
-                # Fetch pc_s from either state_df (if grocery) or consumers_sampled
-                pc_s = consumers_sampled.loc[idx, 'Postcode']
-                tm_s = modes_used.loc[idx]
-                tt   = _lookup_tt(pc_s, tm_s, dest_series=dests[valid])
-
-                dt = pd.DataFrame({
-                    'Day':            day,
-                    'AgentID':        consumers_sampled.loc[idx, 'household'].values,
-                    'Postcode':       pc_s.values,
-                    'Trip_Type':      trip_type,
-                    'Retail_Centre':  dests[valid].values,
-                    'Grocery_Mode':   'physical', # default for NTS
-                    'Transport_Mode': modes_used.loc[idx].values,
-                    'Travel_Time_Min': tt.values,
-                    'Utility_Score':  utility_scores.loc[idx].values
-                })
-                # Filter out distance anomalies (246 min artifacts)
-                dt = dt[dt['Travel_Time_Min'] < 240]
-                if not dt.empty:
-                    all_visits.append(dt)
-                    day_trips.append(dt)
-
-
-        # ── C. Dynamic Evaluation (every 10 days) ─────────────────────
-        if day % 10 == 0:
-            start_day     = day - 10 + 1
-            period_visits = [df for df in all_visits
-                             if df['Day'].iloc[0] >= start_day
-                             and df['Day'].iloc[0] <= day]
-            if period_visits:
-                eval_df = pd.concat(period_visits, ignore_index=True)
-                
-                # 1. Hierarchy-Aware Peer Evaluation
-                eval_msgs = agent.evaluate_retail_centres(
-                    eval_df, retail_gdf, utility_matrices, amenity_binary,
-                    tracker=underperformer_tracker, 
-                    cumulative_boosts=cumulative_boosts)
-                for m in eval_msgs: log_msg(m)
-                
-                # 2. Spatial Diffusion (Word-of-Mouth)
-                diff_msgs = agent.apply_spatial_diffusion_bonus(
-                    eval_df, consumers_sampled, utility_matrices)
-                for m in diff_msgs: log_msg(m)
-
-        # ── D. Update Live Map ────────────────────────────────────────
-        if day_trips:
-            current_day_all  = pd.concat(day_trips)
-            tracked_this_day = current_day_all[current_day_all['AgentID'].isin(track_ids)]
-            if not tracked_this_day.empty:
-                for _, row in tracked_this_day.iterrows():
-                    h_pc    = home_postcodes.get(row['AgentID'])
-                    h_coord = pc_coords[pc_coords['Postcode'] == h_pc]
-                    r_id    = str(row['Retail_Centre'])
-                    # Safety check: if rc_coords failed to load, don't crash the simulation
-                    if rc_coords.empty or 'clean_id' not in rc_coords.columns:
-                        continue
-                        
-                    r_coord = rc_coords[rc_coords['clean_id'] == r_id]
-                    if not h_coord.empty and not r_coord.empty:
-                        live_visits.append({
-                            'source': [h_coord.iloc[0]['longitude'], h_coord.iloc[0]['latitude']],
-                            'target': [r_coord.iloc[0]['center_lon'], r_coord.iloc[0]['center_lat']],
-                            'color':  [255, 165, 0, 200]
-                        })
-                import pydeck as pdk
-                view  = pdk.ViewState(latitude=53.4, longitude=-2.9, zoom=9)
-                layer = pdk.Layer("ArcLayer", live_visits[-50:],
-                                  get_source_position="source",
-                                  get_target_position="target",
-                                  get_width=3,
-                                  get_source_color="color",
-                                  get_target_color="color")
-                live_map_placeholder.pydeck_chart(
-                    pdk.Deck(layers=[layer], initial_view_state=view, map_style="dark"))
-
+    visits = engine.run(num_agents=num_agents_req, days=days, eval_freq=10, log_callback=log_callback)
+    
     log_msg("Saving results...")
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
-    if all_visits:
-        total_visits_df = pd.concat(all_visits, ignore_index=True)
+    if visits:
+        total_visits_df = pd.concat(visits, ignore_index=True)
         output_path = os.path.join(
             config.OUTPUT_DIR, f"visits_log_{int(time.time())}.parquet")
         total_visits_df.to_parquet(output_path)
@@ -452,27 +278,55 @@ def main():
         st.session_state.log_messages = []
         
     with st.sidebar:
-        st.header("Configuration")
-        num_agents = st.number_input("Number of Agents", min_value=1, max_value=656817, value=1000, step=100, help="Total households to simulate (Max: 656,817).")
-        days = st.number_input("Days to Simulate", min_value=1, max_value=365, value=30, step=1, help="Simulation duration in days.")
+        st.header("⚙️ Configuration Panel")
+        
+        # Organize settings into expanders for a cleaner UI
+        with st.expander("Population & Time", expanded=True):
+            num_agents = st.number_input("Number of Agents", min_value=1, max_value=656817, value=1000, step=100, help="Total households to simulate (Max: 656,817).")
+            days = st.number_input("Days to Simulate", min_value=1, max_value=365, value=30, step=1, help="Simulation duration in days.")
+            
+        with st.expander("Social Dynamics", expanded=False):
+            st.markdown("Control how agents are influenced by their peers.")
+            randomize_social = st.toggle("Randomize Social Traits", value=getattr(config, 'RANDOMIZE_SOCIAL_ATTRIBUTES', True), help="If enabled, every agent gets unique, randomized social parameters. Disabling this allows manual global calibration below.")
+            
+            # Only show sliders if we aren't randomizing
+            if not randomize_social:
+                demo_weight = st.slider("Demographic Weight", 0.0, 1.0, getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.8), 0.1, help="0.0 = Copy physical neighbors. 1.0 = Copy demographic peers only.")
+                demo_bw = st.slider("Demographic Bandwidth", 0.1, 1.0, getattr(config, 'DEMOGRAPHIC_BANDWIDTH', 0.5), 0.1, help="Tolerance for 'similarity' (Lower = Stricter).")
+                conformity = st.slider("Neighbourhood Conformity", 0.0, 1.0, getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.2), 0.1, help="0.0 = No peer pressure. 1.0 = Always follow the local trend.")
+            else:
+                demo_weight = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.8)
+                demo_bw = getattr(config, 'DEMOGRAPHIC_BANDWIDTH', 0.5)
+                conformity = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.2)
+                
+        with st.expander("Retail Economics & Policy", expanded=False):
+            st.markdown("Set market interventions and rationality.")
+            distance_decay = st.slider("Distance Sensitivity", 0.5, 3.0, getattr(config, 'DISTANCE_SENSITIVITY', 1.0), 0.1, help=">1 sharply penalizes faraway destinations.")
+            app_interv = st.slider("Global Retail Intervention Boost", 1.0, 10.0, getattr(config, 'RETAIL_INTERVENTION', 1.0), 0.5, help="Multiply attractiveness score of the largest centre.")
+            fail_thresh = st.slider("Failure Threshold (%)", 1, 30, int(getattr(config, 'RETAIL_FAILURE_THRESHOLD', 0.10) * 100), 1, help="Percentile below which a centre triggers automated welfare intervention.") / 100.0
+            interv_boost = st.slider("Automated Intervention Boost", 1.0, 2.0, getattr(config, 'RETAIL_INTERVENTION_BOOST', 1.10), 0.05, help="Multiplier applied to centres falling below the failure threshold.")
+            beta = st.slider("Decision Temperature (Beta)", 1.0, 15.0, getattr(config, 'SOFTMAX_BETA', 5.0), 1.0, help="Low = Exploratory choices. High = Strict optimization.")
         
         st.markdown("---")
-        st.subheader("Spatial & Intervention Controls")
-        
-        distance_decay = st.slider("Distance Sensitivity (Modifier)", 0.5, 3.0, 1.0, 0.1, help="Controls how sensitive agents are to distance/utility. >1 sharply penalises faraway/suboptimal destinations, forcing hyper-local shopping.")
-        app_interv = st.slider("Retail Intervention (Boost Largest Centre)", 1.0, 10.0, 1.0, 0.5, help="Simulate a massive multi-million pound investment in the region's largest retail centre, multiplying its attractiveness score.")
-        conformity = st.slider("Neighbourhood Conformity (Echo Chamber Effect)", 0.0, 1.0, 0.0, 0.1, help="Simulates an effect where households are heavily influenced by their immediate neighbours, causing them to blindly lock into whatever the most popular retail centre in their immediate postcode is.")
-        
-        st.markdown("---")
-        run_btn = st.button("Run Simulation", type="primary", use_container_width=True)
+        run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
 
     if run_btn:
         st.session_state.log_messages = []
         
-        # Apply strict spatial behavioural overrides to the engine configuration
+        # Apply strict behavioural overrides to the engine configuration
         config.DISTANCE_SENSITIVITY = distance_decay
         config.RETAIL_INTERVENTION = app_interv
-        config.NEIGHBOURHOOD_CONFORMITY = conformity
+        
+        # Apply new social & economic parameters
+        config.RANDOMIZE_SOCIAL_ATTRIBUTES = randomize_social
+        if not randomize_social:
+            config.DEMOGRAPHIC_DIFFUSION_WEIGHT = demo_weight
+            config.DEMOGRAPHIC_BANDWIDTH = demo_bw
+            config.NEIGHBOURHOOD_CONFORMITY = conformity
+            
+        config.RETAIL_FAILURE_THRESHOLD = fail_thresh
+        config.RETAIL_INTERVENTION_BOOST = interv_boost
+        config.SOFTMAX_BETA = beta
         
         status_text_placeholder = st.empty()
         live_map_placeholder = st.empty()
@@ -510,7 +364,19 @@ def main():
         days = st.session_state.simulation_days
         
         st.markdown("---")
-        st.header("Simulation Results Overview")
+        col_hdr1, col_hdr2 = st.columns([3, 1])
+        with col_hdr1:
+            st.header("📊 Simulation Results Overview")
+        with col_hdr2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            with open(output_path, "rb") as file:
+                st.download_button(
+                    label="💾 Download Raw Data (.parquet)",
+                    data=file,
+                    file_name=os.path.basename(output_path),
+                    mime="application/octet-stream",
+                    use_container_width=True
+                )
                 
         # Format trip types nicely
         trip_type_mapping = {
@@ -522,19 +388,32 @@ def main():
         }
         visits_df['Trip_Type_Display'] = visits_df['Trip_Type'].map(trip_type_mapping).fillna(visits_df['Trip_Type'].str.title())
         
-        # Metrics Row
-        m1, m2, m3, m4 = st.columns(4)
+        # Metrics Row (Using custom CSS classes)
         total_visits = len(visits_df)
         total_agents_active = visits_df['AgentID'].nunique()
         avg_visits_day = total_visits / days
         visits_per_agent = total_visits / total_agents_active if total_agents_active > 0 else 0
         
-        m1.metric("Total Visits Generated", f"{total_visits:,}")
-        m2.metric("Active Agents", f"{total_agents_active:,}")
-        m3.metric("Avg Visits / Day", f"{avg_visits_day:,.1f}")
-        m4.metric("Avg Visits / Agent", f"{visits_per_agent:,.1f}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+            <div class="metric-card" style="flex: 1;">
+                <h3 style="margin:0; font-size:1rem; color:#6B7280;">Total Visits Generated</h3>
+                <p style="margin:0; font-size:2rem; font-weight:700; color:#1E3A8A;">{total_visits:,}</p>
+            </div>
+            <div class="metric-card" style="flex: 1;">
+                <h3 style="margin:0; font-size:1rem; color:#6B7280;">Active Agents</h3>
+                <p style="margin:0; font-size:2rem; font-weight:700; color:#1E3A8A;">{total_agents_active:,}</p>
+            </div>
+            <div class="metric-card" style="flex: 1;">
+                <h3 style="margin:0; font-size:1rem; color:#6B7280;">Avg Visits / Day</h3>
+                <p style="margin:0; font-size:2rem; font-weight:700; color:#1E3A8A;">{avg_visits_day:,.1f}</p>
+            </div>
+            <div class="metric-card" style="flex: 1;">
+                <h3 style="margin:0; font-size:1rem; color:#6B7280;">Avg Visits / Agent</h3>
+                <p style="margin:0; font-size:2rem; font-weight:700; color:#1E3A8A;">{visits_per_agent:,.1f}</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Tabs for different views
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["Flow Analysis", "Market Share Analysis", "Visitation Map", "Trip Analytics", "Execution Logs"])
