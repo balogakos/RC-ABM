@@ -74,8 +74,13 @@ DEMOGRAPHIC_DIFFUSION_WEIGHT = 1.0
 DEMOGRAPHIC_BANDWIDTH = 0.5
 
 # --- Social Influence & Diffusion ---
-# Minimum visits in a postcode sector to trigger a "trending" centre
-DIFFUSION_THRESHOLD_VISITS = 3
+# Threshold ratio: percentage of a postcode sector's population that must visit
+# a centre for it to start "trending" (Word-of-Mouth effect).
+DIFFUSION_POPULATION_RATIO = 0.05
+
+# Hard floor for trending: minimum absolute visits required regardless of ratio.
+# This prevents noise/outliers in very low-population (rural) sectors.
+DIFFUSION_MIN_VISITS = 3
 
 # The utility boost applied to centres that are trending in a neighbourhood
 DIFFUSION_BOOST_MULTIPLIER = 1.05

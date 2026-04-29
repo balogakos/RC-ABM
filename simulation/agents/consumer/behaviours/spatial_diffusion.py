@@ -10,8 +10,11 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
     Identifies the most popular retail centre per area and boosts utility for 
     agents living in that area.
     """
-    threshold_visits = getattr(config, 'DIFFUSION_THRESHOLD_VISITS', 3)
-    boost_multiplier = getattr(config, 'DIFFUSION_BOOST_MULTIPLIER', 1.05)
+    # -- Threshold Logic ----------------
+    pop_ratio  = getattr(config, 'DIFFUSION_POPULATION_RATIO', 0.05)
+    min_floor  = getattr(config, 'DIFFUSION_MIN_VISITS', 3)
+    boost_mult = getattr(config, 'DIFFUSION_BOOST_MULTIPLIER', 1.05)
+    
     if visits_df.empty or 'Postcode' not in attributes_df.columns:
         return []
 
@@ -27,6 +30,9 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
         if agent_to_postcode.index.duplicated().any():
             agent_to_postcode = agent_to_postcode[~agent_to_postcode.index.duplicated()]
 
+    # Calculate population per postcode sector for dynamic threshold
+    pop_per_sector = agent_to_postcode.value_counts()
+
     visits_with_pc            = visits_df.copy()
     visits_with_pc['Postcode'] = visits_with_pc['AgentID'].map(agent_to_postcode)
     visits_with_pc             = visits_with_pc.dropna(subset=['Postcode'])
@@ -37,9 +43,15 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
               .groupby(['Postcode', 'Retail_Centre'])
               .size().reset_index(name='Visits'))
 
-    idx         = counts.groupby('Postcode')['Visits'].idxmax()
+    # Determine trending centres using dynamic thresholds
+    def is_trending(row):
+        sector_pop = pop_per_sector.get(row['Postcode'], 0)
+        dynamic_threshold = max(min_floor, sector_pop * pop_ratio)
+        return row['Visits'] >= dynamic_threshold
+
+    idx = counts.groupby('Postcode')['Visits'].idxmax()
     top_centres = counts.loc[idx]
-    trending    = top_centres[top_centres['Visits'] >= threshold_visits]
+    trending = top_centres[top_centres.apply(is_trending, axis=1)]
 
     if trending.empty:
         return []
@@ -92,7 +104,7 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
         else:
             effective_sim = np.ones(len(affected_agents))
 
-        per_agent_mults = 1.0 + (boost_multiplier - 1.0) * effective_sim
+        per_agent_mults = 1.0 + (boost_mult - 1.0) * effective_sim
 
         boosted = False
         for matrix in utility_matrices.values():
