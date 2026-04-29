@@ -74,8 +74,39 @@ def load_simulation_data(n_agents=None):
 
     return consumers_df, utility_matrices, amenity_binary, tt_lookup
 
+def run_ensemble():
+    """Main execution loop for multiple runs."""
+    n_agents = 100 if TEST_MODE else None
+    consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents)
+    
+    engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
+    
+    results_dir = Path(ROOT_DIR) / "multi_runs" / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    for i in range(1, NUM_RUNS + 1):
+        print(f"\n>>> Starting Run {i}/{NUM_RUNS}...")
+        start_time = time.time()
+        
+        # Reset engine/seed implicitly by re-initializing or clear state
+        # In this ABM, re-running the engine's run() creates a new population.
+        visits = engine.run(
+            num_agents=len(consumers_df), 
+            days=DAYS, 
+            eval_freq=EVAL_FREQ
+        )
+        
+        # Process and save visits
+        if visits:
+            df_visits = pd.concat(visits, ignore_index=True)
+            output_path = results_dir / f"run_{i}.parquet"
+            df_visits.to_parquet(output_path, index=False)
+            
+            elapsed = time.time() - start_time
+            print(f"Run {i} complete. Saved to {output_path.name}. (Time: {elapsed:.1f}s)")
+        else:
+            print(f"Run {i} generated no visits.")
+
 if __name__ == "__main__":
-    # Test the loader
-    n = 100 if TEST_MODE else None
-    data = load_simulation_data(n_agents=n)
-    print("Data loaded successfully.")
+    import time
+    run_ensemble()
