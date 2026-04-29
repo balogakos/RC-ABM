@@ -103,48 +103,41 @@ def _load_all_data(n_agents=None):
     """
     import geopandas as gpd
 
-    import pyarrow.parquet as pq
+    print(f"Loading utility dataset (Test Mode: {config.TEST_MODE})...")
     
-    from main import TEST_MODE  # noqa: F401 — kept for legacy; use config.TEST_MODE directly
-    base_utility_dir = os.path.join(config.MODEL_DIR, "Utility")
-    if config.TEST_MODE:
-        base_utility_dir = os.path.join(base_utility_dir, "testing")
+    file_path = config.UTILITY_SCORES_AVG
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Missing consolidated utility dataset: {file_path}")
+        
+    df = pd.read_parquet(file_path)
+    if n_agents and len(df) > n_agents:
+        df = df.sample(n=n_agents, random_state=42)
+        
+    base_modes = {}
+    suffixes = ['_walk', '_drive', '_pt']
+    for suf in suffixes:
+        mode = suf.lstrip('_')
+        cols = [c for c in df.columns if c.endswith(suf)]
+        if not cols: continue
+        
+        mat = df[cols].astype(np.float32)
+        mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
+        mat.index = df['household']
+        base_modes[mode] = mat.fillna(0)
 
-    print(f"Loading 6 trip-specific utility datasets from {base_utility_dir} ({n_agents or 'all'} agents)…")
+    # Map the single average matrix to all trip types expected by the engine
     utility_matrices_base = {}
-    consumers = None
-    
-    trip_types = [
-        'bulk', 'convenience', 'comparison', 
-        'entertainment', 'food_drink', 'service'
-    ]
-        
-    for trip_type in trip_types:
-        file_path = os.path.join(base_utility_dir, f'utility_scores_{trip_type}.parquet')
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
-            
-        if n_agents:
-            _pf = pq.ParquetFile(file_path)
-            df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
-        else:
-            df = pd.read_parquet(file_path)
-            
-        meta_df, mode_dfs = _split_matrices_fn(df)
-        
-        # The bulk dataset acts as our primary demographic source for initializing the population
-        if trip_type == 'bulk':
-            consumers = meta_df
-            
-        for tmode, mat in mode_dfs.items():
-            utility_matrices_base[f'{trip_type}_{tmode}'] = mat
-            
-        import gc
-        del df
-        del mode_dfs
-        if trip_type != 'bulk':
-            del meta_df
-        gc.collect()
+    trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
+    for t_type in trip_types:
+        for mode, mat in base_modes.items():
+            utility_matrices_base[f"{t_type}_{mode}"] = mat
+
+    meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
+    consumers = df[meta_cols].copy()
+
+    import gc
+    del df
+    gc.collect()
 
     print("Loading retail centre amenity data…")
     gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
