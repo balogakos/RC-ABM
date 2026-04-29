@@ -66,7 +66,7 @@ BULK_REFILL_RANGE        = [0.8, 1.0]
 # retail preferences between households.
 #   0.0 = purely spatial (original behaviour — all neighbours treated equally)
 #   1.0 = full demographic weighting (only similar households influence each other)
-DEMOGRAPHIC_DIFFUSION_WEIGHT = 1.0
+DEMOGRAPHIC_DIFFUSION_WEIGHT = 0.8
 
 # Gaussian decay bandwidth in normalised [0, 1] age-income space.
 # Smaller values → steeper drop-off (only near-identical demographics spread).
