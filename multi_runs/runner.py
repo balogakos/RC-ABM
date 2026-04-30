@@ -23,8 +23,6 @@ TEST_MODE = True    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
 NUM_RUNS  = 5       # Number of iterations to average out uncertainty
 DAYS      = 30
 EVAL_FREQ = 10
-PARALLEL  = True    # Run multiple simulations at once
-NUM_CORES = 4       # How many CPU cores to use (Check your RAM!)
 
 def _clean_rc_id(x):
     s = str(x)
@@ -45,9 +43,13 @@ def load_simulation_data(n_agents=None):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
             
-        df = pd.read_parquet(file_path)
-        if n_agents and len(df) > n_agents:
-            df = df.sample(n=n_agents, random_state=42)
+        # Memory-efficient batch loading for large parquet files
+        import pyarrow.parquet as pq
+        if n_agents:
+            _pf = pq.ParquetFile(file_path)
+            df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
+        else:
+            df = pd.read_parquet(file_path)
             
         # Extract matrices
         for suf in suffixes:
@@ -58,8 +60,9 @@ def load_simulation_data(n_agents=None):
             mat = df[cols].astype(np.float32)
             mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
             
-            # CRITICAL FIX: Ensure index is unique to prevent reindex row multiplication
-            mat.index = df['household']
+            # Ensure index is clean and unique to prevent row multiplication during reindex
+            # Force to string for consistent indexing across different utility datasets
+            mat.index = df['household'].astype(str)
             if not mat.index.is_unique:
                 mat = mat[~mat.index.duplicated(keep='first')]
                 
@@ -68,6 +71,8 @@ def load_simulation_data(n_agents=None):
         if trip_type == 'bulk':
             meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
             consumers_df = df[meta_cols].copy()
+            # Consistent with matrices
+            consumers_df['household'] = consumers_df['household'].astype(str)
             if not consumers_df['household'].is_unique:
                 consumers_df = consumers_df.drop_duplicates(subset='household', keep='first')
 
@@ -126,20 +131,21 @@ def run_single_iteration(run_id):
         return f"Run {run_id} No Data"
 
 def run_ensemble():
-    """Main execution entry point."""
+    """Main entry point for sequential ensemble runs."""
     import time
-    from multiprocessing import Pool
+    print(f"====================================================")
+    print(f"RETAIL ABM ENSEMBLE RUNNER (Sequential Mode)")
+    print(f"Total Runs: {NUM_RUNS} | Days: {DAYS}")
+    print(f"====================================================\n")
     
     overall_start = time.time()
     run_ids = list(range(1, NUM_RUNS + 1))
     
-    if PARALLEL:
-        print(f"Starting Parallel Ensemble: {NUM_RUNS} runs on {NUM_CORES} cores...")
-        with Pool(processes=NUM_CORES) as pool:
-            results = pool.map(run_single_iteration, run_ids)
-    else:
-        print(f"Starting Sequential Ensemble: {NUM_RUNS} runs...")
-        results = [run_single_iteration(rid) for rid in run_ids]
+    print(f"Starting Sequential Ensemble: {NUM_RUNS} runs...")
+    results = []
+    for rid in run_ids:
+        res = run_single_iteration(rid)
+        results.append(res)
         
     total_time = time.time() - overall_start
     print(f"\n====================================================")
@@ -149,5 +155,4 @@ def run_ensemble():
     print(f"====================================================\n")
 
 if __name__ == "__main__":
-    # Multiprocessing on Windows requires this check
     run_ensemble()

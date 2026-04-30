@@ -11,10 +11,10 @@ class ConsumerPopulation:
     def __init__(self, num_agents, attributes_df):
         self.num_agents = num_agents
         # Initialize attributes
-        if len(attributes_df) < num_agents:
-            self.attributes = attributes_df.sample(n=num_agents, replace=True).reset_index(drop=True)
-        else:
+        if num_agents <= len(attributes_df):
             self.attributes = attributes_df.sample(n=num_agents, replace=False).reset_index(drop=True)
+        else:
+            self.attributes = attributes_df.sample(n=num_agents, replace=True).reset_index(drop=True)
 
         # Initialize dynamic state from attributes_df columns
         # Note: stock_level from data is used as Capacity. 

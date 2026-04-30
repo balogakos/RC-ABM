@@ -24,7 +24,7 @@ from simulation.core.constants import TRANSPORT_MODES
 import visualization
 
 # --- Configuration Override ---
-TEST_MODE = True
+TEST_MODE = False
 
 def _clean_rc_id(x):
     try:
@@ -149,7 +149,7 @@ class RetailABMApp:
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
             
-            # FAST LOADING: Only read the first N rows instead of loading GBs of data
+            # Memory-efficient batch loading to handle large datasets gracefully
             if n_agents:
                 _pf = pq.ParquetFile(file_path)
                 df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
@@ -166,8 +166,8 @@ class RetailABMApp:
                 mat = df[cols].astype(np.float32)
                 mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
                 
-                # CRITICAL FIX: Ensure index is unique to prevent reindex row multiplication
-                mat.index = df['household']
+                # Standardize index to string to avoid mixed-type duplication and row expansion
+                mat.index = df['household'].astype(str)
                 if not mat.index.is_unique:
                     mat = mat[~mat.index.duplicated(keep='first')]
                     
@@ -177,6 +177,7 @@ class RetailABMApp:
             if trip_type == 'bulk':
                 meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
                 consumers = df[meta_cols].copy()
+                consumers['household'] = consumers['household'].astype(str)
                 if not consumers['household'].is_unique:
                     consumers = consumers.drop_duplicates(subset='household', keep='first')
 
@@ -206,7 +207,7 @@ class RetailABMApp:
             days = int(self.days_var.get())
             eval_freq = int(self.eval_freq_var.get())
 
-            # FORCE RESET: Always reload data to ensure no stale/duplicated data exists in memory
+            # Refresh data to ensure no stale/duplicated data exists in the current session
             self.log(f"Initializing simulation for {num_agents_req} agents...")
             raw = self.load_data(n_agents=num_agents_req)
             self._base_data = raw

@@ -127,8 +127,8 @@ def _load_all_data(n_agents=None):
             mat = df[cols].astype(np.float32)
             mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
             
-            # CRITICAL FIX: Ensure index is unique to prevent reindex row multiplication
-            mat.index = df['household']
+            # Enforce unique string-based indexing to prevent row expansion and data misalignment
+            mat.index = df['household'].astype(str)
             if not mat.index.is_unique:
                 mat = mat[~mat.index.duplicated(keep='first')]
                 
@@ -138,6 +138,7 @@ def _load_all_data(n_agents=None):
         if trip_type == 'bulk':
             meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
             consumers = df[meta_cols].copy()
+            consumers['household'] = consumers['household'].astype(str)
             if not consumers['household'].is_unique:
                 consumers = consumers.drop_duplicates(subset='household', keep='first')
 
