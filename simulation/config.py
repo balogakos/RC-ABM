@@ -73,6 +73,20 @@ DEMOGRAPHIC_DIFFUSION_WEIGHT = 0.8
 DEMOGRAPHIC_BANDWIDTH        = 0.5
 NEIGHBOURHOOD_CONFORMITY     = 0.2
 
+# --- Geodemographic Subcluster Integration ---
+# Toggle the entire feature on/off (False = ablation run, no cluster blending)
+GEODEMOGRAPHIC_ENABLED = True
+
+# Per-agent blend weight w_i is drawn from Uniform(CLUSTER_BLEND_MIN, CLUSTER_BLEND_MAX)
+# at initialisation. Mean ≈ 0.5 → equal weight to NTS individual and cluster prior.
+CLUSTER_BLEND_MIN    = 0.3
+CLUSTER_BLEND_MAX    = 0.7
+
+# Sigmoid sharpness applied when converting z-scores to probability priors.
+# Higher γ = sharper differentiation between cluster priors.
+CLUSTER_SIGMOID_GAMMA = 1.5
+
+
 # --- Social Influence & Diffusion ---
 # Threshold ratio: percentage of a postcode sector's population that must visit
 # a centre for it to start "trending" (Word-of-Mouth effect).

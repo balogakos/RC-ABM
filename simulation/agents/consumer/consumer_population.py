@@ -1,7 +1,21 @@
+import sys
+import os
 import pandas as pd
 import numpy as np
 import config
 from .behaviours import consumption, shopping_logic, travel_choice, spatial_diffusion
+
+# Geodemographic subcluster integration
+_RETAIL_ABM_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if _RETAIL_ABM_ROOT not in sys.path:
+    sys.path.insert(0, _RETAIL_ABM_ROOT)
+try:
+    from data_preprocessing.geodemographic.subcluster_priors import (
+        assign_subcluster, apply_cluster_blend, ALL_SUBCLUSTERS
+    )
+    _GEO_AVAILABLE = True
+except ImportError:
+    _GEO_AVAILABLE = False
 
 class ConsumerPopulation:
     """
@@ -41,6 +55,38 @@ class ConsumerPopulation:
             self.state_df['Diffusion_Weight']    = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.8)
             self.state_df['Diffusion_Bandwidth'] = getattr(config, 'DEMOGRAPHIC_BANDWIDTH', 0.5)
             self.state_df['Conformity_Weight']   = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.2)
+
+        # --- Geodemographic Subcluster Integration ---
+        geo_enabled = getattr(config, 'GEODEMOGRAPHIC_ENABLED', True) and _GEO_AVAILABLE
+        if geo_enabled:
+            blend_min = getattr(config, 'CLUSTER_BLEND_MIN', 0.3)
+            blend_max = getattr(config, 'CLUSTER_BLEND_MAX', 0.7)
+            test_mode = getattr(config, 'TEST_MODE', True)
+
+            # Assign subcluster label per agent
+            postcodes = (
+                self.attributes['Postcode'].values
+                if 'Postcode' in self.attributes.columns
+                else [None] * num_agents
+            )
+            self.attributes['Geo_Subcluster'] = [
+                assign_subcluster(pc, test_mode=test_mode) for pc in postcodes
+            ]
+
+            # Per-agent blend weight drawn from U(blend_min, blend_max)
+            self.attributes['Cluster_Blend_Weight'] = np.random.uniform(
+                blend_min, blend_max, num_agents
+            )
+
+            # Blend NTS probabilities with cluster-level contextual priors
+            self.attributes = apply_cluster_blend(
+                self.attributes,
+                subcluster_col='Geo_Subcluster',
+                blend_weight_col='Cluster_Blend_Weight'
+            )
+        else:
+            self.attributes['Geo_Subcluster']      = 'none'
+            self.attributes['Cluster_Blend_Weight'] = 0.0
         
         # Starting stock randomized between 0 and Capacity
         self.state_df['Stock'] = np.random.uniform(0, self.state_df['Capacity'])

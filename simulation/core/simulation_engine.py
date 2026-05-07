@@ -153,6 +153,24 @@ class SimulationEngine:
                     diffusion_msgs = self.population.apply_social_influence(eval_df, self.utility_matrices)
                     for msg in diffusion_msgs: log(msg)
 
+        # Attach Geo_Subcluster label to all visit records
+        if all_visits:
+            subcluster_map = (
+                self.population.attributes
+                .set_index('household')['Geo_Subcluster']
+                if 'Geo_Subcluster' in self.population.attributes.columns
+                   and 'household' in self.population.attributes.columns
+                else None
+            )
+            if subcluster_map is not None:
+                combined = pd.concat(all_visits, ignore_index=True)
+                combined['Geo_Subcluster'] = (
+                    combined['AgentID'].astype(str)
+                    .map(subcluster_map.astype(str))
+                    .fillna('none')
+                )
+                return [combined]
+
         return all_visits
 
     def _lookup_travel_times(self, postcode_series, transport_mode_series, dest_series):
