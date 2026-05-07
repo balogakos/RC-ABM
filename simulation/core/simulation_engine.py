@@ -27,7 +27,25 @@ class SimulationEngine:
         self.population = ConsumerPopulation(num_agents, self.consumers_df)
         self.retail_manager = RetailManager(self.amenity_binary)
 
-        all_visits = []
+        from simulation.core import paths
+
+        # --- Fix 1: period-streaming ---
+        # current_period holds only the current eval window in RAM.
+        # After each evaluation the period is written to a temp parquet and cleared,
+        # keeping peak visit memory at eval_freq*rows/day instead of total_days*rows/day.
+        tmp_dir = paths.OUTPUT_DIR / '_visits_tmp'
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        written_files = []     # temp parquet paths flushed to disk
+        current_period = []    # DataFrames for the current eval window only
+
+        # Build subcluster map once upfront so it is available during flush
+        subcluster_map = (
+            self.population.attributes
+            .set_index('household')['Geo_Subcluster']
+            if 'Geo_Subcluster' in self.population.attributes.columns
+               and 'household' in self.population.attributes.columns
+            else None
+        )
 
         for day in range(1, days + 1):
             log(f"Day {day}/{days}...")
@@ -42,7 +60,7 @@ class SimulationEngine:
             online_mask = needs_grocery & (grocery_mode_series == 'online')
             if online_mask.any():
                 idx = self.population.state_df[online_mask].index
-                all_visits.append(pd.DataFrame({
+                current_period.append(pd.DataFrame({
                     'Day': day, 'AgentID': self.population.state_df.loc[idx, 'AgentID'].values,
                     'Postcode': self.population.state_df.loc[idx, 'Postcode'].values,
                     'Trip_Type': 'grocery', 'Retail_Centre': 'ONLINE',
@@ -95,7 +113,7 @@ class SimulationEngine:
                                     if key in self.utility_matrices:
                                         f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                             
-                            all_visits.append(pd.DataFrame({
+                            current_period.append(pd.DataFrame({
                                 'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                                 'Postcode': pc_series.values, 'Trip_Type': t_type,
                                 'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
@@ -130,7 +148,7 @@ class SimulationEngine:
                             if key in self.utility_matrices:
                                 f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                                 
-                    all_visits.append(pd.DataFrame({
+                    current_period.append(pd.DataFrame({
                         'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                         'Postcode': pc_series.values, 'Trip_Type': t_type,
                         'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
@@ -143,35 +161,64 @@ class SimulationEngine:
             # 5. Evaluation & Social Influence
             if day % eval_freq == 0:
                 log(f"Evaluating retail centres (Day {day})...")
-                start_day = day - eval_freq + 1
-                period_visits = [df for df in all_visits if df['Day'].iloc[0] >= start_day]
-                if period_visits:
-                    eval_df  = pd.concat(period_visits, ignore_index=True)
+                if current_period:
+                    eval_df = pd.concat(current_period, ignore_index=True)
                     messages = self.retail_manager.evaluate_centres(eval_df, self.utility_matrices)
                     for msg in messages: log(msg)
 
                     diffusion_msgs = self.population.apply_social_influence(eval_df, self.utility_matrices)
                     for msg in diffusion_msgs: log(msg)
 
-        # Attach Geo_Subcluster label to all visit records
-        if all_visits:
-            subcluster_map = (
-                self.population.attributes
-                .set_index('household')['Geo_Subcluster']
-                if 'Geo_Subcluster' in self.population.attributes.columns
-                   and 'household' in self.population.attributes.columns
-                else None
-            )
+                    # Attach Geo_Subcluster before flushing
+                    if subcluster_map is not None:
+                        eval_df['Geo_Subcluster'] = (
+                            eval_df['AgentID'].astype(str)
+                            .map(subcluster_map.astype(str))
+                            .fillna('none')
+                        )
+
+                    # Write period to disk and free memory
+                    fpath = tmp_dir / f'period_day{day}.parquet'
+                    eval_df.to_parquet(fpath, index=False)
+                    written_files.append(fpath)
+                    del eval_df
+                    current_period.clear()
+
+        # Flush any remaining days (if days % eval_freq != 0)
+        if current_period:
+            remainder_df = pd.concat(current_period, ignore_index=True)
             if subcluster_map is not None:
-                combined = pd.concat(all_visits, ignore_index=True)
-                combined['Geo_Subcluster'] = (
-                    combined['AgentID'].astype(str)
+                remainder_df['Geo_Subcluster'] = (
+                    remainder_df['AgentID'].astype(str)
                     .map(subcluster_map.astype(str))
                     .fillna('none')
                 )
-                return [combined]
+            fpath = tmp_dir / 'period_remainder.parquet'
+            remainder_df.to_parquet(fpath, index=False)
+            written_files.append(fpath)
+            del remainder_df
+            current_period.clear()
 
-        return all_visits
+        if not written_files:
+            return []
+
+        # Read back all period files and combine into a single DataFrame
+        combined = pd.concat(
+            [pd.read_parquet(f) for f in written_files], ignore_index=True
+        )
+
+        # Clean up temp files
+        for f in written_files:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            pass  # not empty — leave it
+
+        return [combined]
 
     def _lookup_travel_times(self, postcode_series, transport_mode_series, dest_series):
         if not self.tt_lookup:

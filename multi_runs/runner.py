@@ -19,9 +19,9 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Configuration ---
-TEST_MODE = True    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
-NUM_RUNS  = 5       # Number of iterations to average out uncertainty
-DAYS      = 30
+TEST_MODE = False    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
+NUM_RUNS  = 3       # Number of iterations to average out uncertainty
+DAYS      = 10
 EVAL_FREQ = 10
 
 def _clean_rc_id(x):
@@ -57,7 +57,7 @@ def load_simulation_data(n_agents=None):
             cols = [c for c in df.columns if c.endswith(suf)]
             if not cols: continue
             
-            mat = df[cols].astype(np.float32)
+            mat = df[cols].astype(np.float16)
             mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
             
             # Ensure index is clean and unique to prevent row multiplication during reindex

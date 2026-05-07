@@ -163,7 +163,7 @@ class RetailABMApp:
                 cols = [c for c in df.columns if c.endswith(suf)]
                 if not cols: continue
                 
-                mat = df[cols].astype(np.float32)
+                mat = df[cols].astype(np.float16)
                 mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
                 
                 # Standardize index to string to avoid mixed-type duplication and row expansion
