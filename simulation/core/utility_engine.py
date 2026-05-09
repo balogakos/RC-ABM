@@ -6,8 +6,10 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
                            shoppers_idx: pd.Index, has_postcode: bool = True) -> pd.DataFrame:
     """
     Applies intervention, neighbourhood conformity, and distance-sensitivity
-    modifications to a utility matrix slice, in-place on a copy.
-    Returns the modified copy.
+    modifications to a utility matrix slice. 
+    
+    This function handles the "Echo Chamber" effect by computing local max utilities 
+    within demographic/geographic groups.
     """
     # Intervention Control: boost globally largest centre
     intervention_mult = getattr(config, 'RETAIL_INTERVENTION', 1.0)
