@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import config
 
-def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
-                           has_postcode=True):
+def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd.DataFrame, 
+                           shoppers_idx: pd.Index, has_postcode: bool = True) -> pd.DataFrame:
     """
     Applies intervention, neighbourhood conformity, and distance-sensitivity
     modifications to a utility matrix slice, in-place on a copy.
