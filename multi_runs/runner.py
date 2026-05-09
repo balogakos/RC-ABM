@@ -20,9 +20,9 @@ from simulation.core.simulation_engine import SimulationEngine
 
 # --- Configuration ---
 TEST_MODE = False    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
-NUM_RUNS  = 3       # Number of iterations to average out uncertainty
-DAYS      = 10
-EVAL_FREQ = 10
+NUM_RUNS  = 5      # Number of iterations to average out uncertainty
+DAYS      = 180
+EVAL_FREQ = 30
 
 def _clean_rc_id(x):
     s = str(x)
@@ -119,10 +119,35 @@ def run_single_iteration(run_id):
     )
     
     if visits:
-        df_visits = pd.concat(visits, ignore_index=True)
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
         output_path = results_dir / f"run_{run_id}.parquet"
-        df_visits.to_parquet(output_path, index=False)
-        
+
+        # Merge period files on-disk without loading everything into RAM at once.
+        # PyArrow reads and writes each file sequentially so peak RAM is a single period.
+        writer = None
+        try:
+            for fpath in visits:
+                table = pq.read_table(fpath)
+                if writer is None:
+                    writer = pq.ParquetWriter(output_path, table.schema)
+                writer.write_table(table)
+        finally:
+            if writer:
+                writer.close()
+
+        # Clean up temp period files
+        for fpath in visits:
+            try:
+                fpath.unlink()
+            except OSError:
+                pass
+        try:
+            visits[0].parent.rmdir()
+        except (OSError, IndexError):
+            pass
+
         elapsed = time.time() - start_time
         print(f"--- [Run {run_id}] COMPLETE in {elapsed:.1f}s. Saved to {output_path.name} ---")
         return f"Run {run_id} Success"
