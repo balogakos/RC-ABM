@@ -116,7 +116,7 @@ def run_single_iteration(run_id):
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
     
     # Thresholding: Zero out extremely low utilities to speed up softmax choice logic
-    THRESHOLD = 0.4
+    THRESHOLD = 0.5
     for mat in utility_matrices.values():
         mat[mat < THRESHOLD] = 0.0
         
