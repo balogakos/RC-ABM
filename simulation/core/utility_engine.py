@@ -48,28 +48,6 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
                 inc_bands = pd.qcut(incomes, q=4,
                                     labels=['q1', 'q2', 'q3', 'q4'],
                                     duplicates='drop')
-            except ValueError:
-                inc_bands = pd.Series('q2', index=shoppers_idx)
-
-            group_key = (agent_pcs.values + '_' +
-                         age_bands.astype(str).values + '_' +
-                         inc_bands.astype(str).values)
-        else:
-            group_key = agent_pcs.values
-
-        # Optimization: group first, compute max per group, then map back to agents.
-        # This is significantly faster than transform('max') for wide dataframes
-        # because it performs the max calculation on a much smaller reduced set.
-        group_maxes = relevant_utils.groupby(group_key).max()
-        local_maxes = group_maxes.loc[group_key]
-        local_maxes.index = relevant_utils.index # Align indices for math
-            
-        if isinstance(conformity, pd.Series):
-            # Element-wise lerp: (1-c)*U + c*max_U
-            relevant_utils = relevant_utils.mul(1 - conformity, axis=0) + local_maxes.mul(conformity, axis=0)
-        else:
-            relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * (conformity))
-
     # Distance Sensitivity (beta scale)
     dist_sens = getattr(config, 'DISTANCE_SENSITIVITY', 1.0)
     if dist_sens != 1.0:
