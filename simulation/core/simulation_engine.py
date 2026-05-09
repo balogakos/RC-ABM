@@ -210,7 +210,10 @@ class SimulationEngine:
         return written_files
 
     def _prepare_tt_lookup(self, tt_lookup: dict) -> dict:
-        """Converts nested dicts to DataFrames for fast vectorized indexing."""
+        """
+        Converts nested dicts to DataFrames for fast vectorized indexing.
+        Supports both 2D lookups (postcode, rc_id) and 1D lookups (postcode).
+        """
         if not tt_lookup:
             return {}
             
