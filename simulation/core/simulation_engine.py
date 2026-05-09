@@ -19,6 +19,10 @@ class SimulationEngine:
         self.retail_manager = None
 
     def run(self, num_agents, days, eval_freq, log_callback=None):
+        """
+        Runs the simulation loop for a specified number of days.
+        Includes performance monitoring (per-day timers) and periodic evaluation phases.
+        """
         def log(msg):
             if log_callback:
                 log_callback(msg)
