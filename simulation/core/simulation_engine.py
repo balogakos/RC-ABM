@@ -209,7 +209,7 @@ class SimulationEngine:
         # so that the full dataset is never materialised in RAM.
         return written_files
 
-    def _prepare_tt_lookup(self, tt_lookup):
+    def _prepare_tt_lookup(self, tt_lookup: dict) -> dict:
         """Converts nested dicts to DataFrames for fast vectorized indexing."""
         if not tt_lookup:
             return {}
