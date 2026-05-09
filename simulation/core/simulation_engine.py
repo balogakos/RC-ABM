@@ -234,6 +234,10 @@ class SimulationEngine:
         return processed
 
     def _lookup_travel_times(self, postcode_series: pd.Series, transport_mode_series: pd.Series, dest_series: pd.Series) -> pd.Series:
+        """
+        Records the travel time for each agent trip using vectorized lookups.
+        Handles both single-value times and location-specific destination times.
+        """
         if not self.tt_lookup_dfs:
             return pd.Series(0.0, index=postcode_series.index)
             
