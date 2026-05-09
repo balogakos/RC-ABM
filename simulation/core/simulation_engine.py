@@ -50,8 +50,9 @@ class SimulationEngine:
         )
 
         for day in range(1, days + 1):
+            day_start = time.time()
             log(f"Day {day}/{days}...")
-
+            
             # 1. Consumption & Need Detection
             self.population.consume()
             needs_grocery = self.population.check_grocery_need()
@@ -185,6 +186,9 @@ class SimulationEngine:
                     written_files.append(fpath)
                     del eval_df
                     current_period.clear()
+            
+            day_elapsed = time.time() - day_start
+            log(f"  -> Day {day} complete in {day_elapsed:.2f}s")
 
         # Flush any remaining days (if days % eval_freq != 0)
         if current_period:
