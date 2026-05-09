@@ -22,7 +22,7 @@ class ConsumerPopulation:
     Manages the state and behaviours of the entire consumer population.
     Uses vectorized operations on internal DataFrames for high performance.
     """
-    def __init__(self, num_agents, attributes_df):
+    def __init__(self, num_agents: int, attributes_df: pd.DataFrame):
         self.num_agents = num_agents
         # Initialize attributes
         if num_agents <= len(attributes_df):
