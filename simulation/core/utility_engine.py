@@ -43,28 +43,42 @@ def sample_destinations(relevant_utils, shoppers_idx):
     valid_idx   = shoppers_idx[valid.values]
 
     beta = getattr(config, 'SOFTMAX_BETA', 5.0)
-    arr  = valid_utils.values.astype(np.float32)
+    # Use float16 for massive memory savings in intermediate arrays
+    arr  = valid_utils.values.astype(np.float16)
 
     scaled = beta * arr
     mask = (arr <= 0)
-    scaled[mask] = -1e10
+    # Use a safe minimum for float16 (-1e4 is usually enough for softmax)
+    scaled[mask] = -10000.0 
     
-    scaled -= pd.DataFrame(scaled).max(axis=1).values.reshape(-1, 1)
-    exp_u  = np.exp(scaled)
+    # Subtract max for numerical stability
+    row_max = scaled.max(axis=1, keepdims=True)
+    scaled -= row_max
+    
+    exp_u  = np.exp(scaled.astype(np.float32)) # exp needs float32 for range
     exp_u[mask] = 0.0
     
     denom = exp_u.sum(axis=1, keepdims=True)
-    probs = exp_u / np.where(denom == 0, 1.0, denom)
+    actually_valid = (denom > 0).flatten()
+    
+    if not actually_valid.any():
+        return pd.Series(None, index=shoppers_idx, dtype=object)
 
+    exp_u_filt = exp_u[actually_valid]
+    denom_filt = denom[actually_valid]
+    v_idx_filt = valid_idx[actually_valid]
+    v_utils_filt = valid_utils[actually_valid]
+
+    probs  = exp_u_filt / denom_filt
     cumsum = probs.cumsum(axis=1)
     cumsum /= cumsum[:, -1:]
 
     rand = np.random.rand(len(cumsum), 1)
     choice_indices = (rand < cumsum).argmax(axis=1)
-    choice_labels  = valid_utils.columns[choice_indices]
+    choice_labels  = v_utils_filt.columns[choice_indices]
 
     result = pd.Series(None, index=shoppers_idx, dtype=object)
-    result.loc[valid_idx] = choice_labels.values
+    result.loc[v_idx_filt] = choice_labels.values
     return result
 
 
@@ -98,22 +112,41 @@ def joint_mode_destination_choice(aligned_mode_utils, shoppers_idx):
     valid_idx     = shoppers_idx[valid]
 
     beta   = getattr(config, 'SOFTMAX_BETA', 5.0)
-    scaled = (beta * valid_stacked).astype(np.float32)
+    # Memory optimization: Use float16 for the massive stacked array
+    valid_stacked = valid_stacked.astype(np.float16)
+    scaled = (beta * valid_stacked)
     
     mask = (valid_stacked <= 0)
-    scaled[mask] = -1e10
+    scaled[mask] = -10000.0
     
-    scaled -= scaled.max(axis=1, keepdims=True)
-    exp_u  = np.exp(scaled)
+    # Numerical stability: Subtract max
+    row_max = scaled.max(axis=1, keepdims=True)
+    scaled -= row_max
+    
+    exp_u  = np.exp(scaled.astype(np.float32)) # exp needs float32
     exp_u[mask] = 0.0
     
+    # 6. Softmax Probabilities
     denom = exp_u.sum(axis=1, keepdims=True)
-    probs = exp_u / np.where(denom == 0, 1.0, denom)
+    # If an agent has no valid destination (denom=0), they should be excluded
+    actually_valid = (denom > 0).flatten()
+    
+    if not actually_valid.any():
+        return destinations, modes_used, chosen_scores
 
+    # Filter down to agents who have at least one valid destination
+    exp_u_filt = exp_u[actually_valid]
+    denom_filt = denom[actually_valid]
+    v_idx_filt = valid_idx[actually_valid]
+    v_stacked_filt = valid_stacked[actually_valid]
+    
+    probs = exp_u_filt / denom_filt
     cumsum = probs.cumsum(axis=1)
+    # Ensure cumulative sum ends at exactly 1.0 to avoid floating point issues
     cumsum /= cumsum[:, -1:]
 
-    rand        = np.random.rand(len(cumsum), 1)
+    # 7. Sampling
+    rand = np.random.rand(len(cumsum), 1)
     choice_flat = (rand < cumsum).argmax(axis=1)
 
     mode_indices   = choice_flat // n_centres
@@ -122,11 +155,12 @@ def joint_mode_destination_choice(aligned_mode_utils, shoppers_idx):
     chosen_modes   = [all_modes[i] for i in mode_indices]
     chosen_centres = centres[centre_indices]
     
-    picked_utils = valid_stacked[np.arange(len(choice_flat)), choice_flat]
+    picked_utils = v_stacked_filt[np.arange(len(choice_flat)), choice_flat]
 
-    destinations.loc[valid_idx]  = chosen_centres.values
-    modes_used.loc[valid_idx]    = chosen_modes
-    chosen_scores.loc[valid_idx] = picked_utils
+    # 8. Assign results
+    destinations.loc[v_idx_filt]  = chosen_centres.values
+    modes_used.loc[v_idx_filt]    = chosen_modes
+    chosen_scores.loc[v_idx_filt] = picked_utils
 
     return destinations, modes_used, chosen_scores
 
