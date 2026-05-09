@@ -33,7 +33,7 @@ def _clean_rc_id(x):
     s = str(x)
     return s[:-2] if s.endswith('.0') else s
 
-def load_simulation_data(n_agents=None):
+def load_simulation_data(n_agents: int = None) -> tuple:
     """Standalone loader for ensemble runs using trip-specific files."""
     print(f"Loading 6 trip-specific utility datasets from {config.UTILITY_DIR}...")
     
