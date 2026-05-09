@@ -236,7 +236,11 @@ class RetailABMApp:
             if all_visits:
                 self.log("Saving results...")
                 paths.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                total_visits_df = pd.concat(all_visits, ignore_index=True)
+                
+                # Correctly load the temporary parquet files
+                dfs = [pd.read_parquet(f) for f in all_visits]
+                total_visits_df = pd.concat(dfs, ignore_index=True)
+                
                 output_path = paths.OUTPUT_DIR / f"visits_log_{int(time.time())}.parquet"
                 total_visits_df.to_parquet(output_path)
 
