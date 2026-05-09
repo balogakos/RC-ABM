@@ -22,6 +22,8 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Configuration ---
+# NOTE: Each 656k agent run requires ~16GB RAM. Sequential mode is default
+# to avoid memory exhaustion on machines with less than 64GB RAM.
 TEST_MODE = False    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
 NUM_RUNS  = 5      # Number of iterations to average out uncertainty
 DAYS      = 180
