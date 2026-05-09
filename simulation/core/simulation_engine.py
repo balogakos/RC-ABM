@@ -11,7 +11,9 @@ class SimulationEngine:
         self.consumers_df = consumers_df
         self.utility_matrices = utility_matrices
         self.amenity_binary = amenity_binary
-        self.tt_lookup = tt_lookup
+        
+        # Pre-process travel time lookup for vectorized access
+        self.tt_lookup_dfs = self._prepare_tt_lookup(tt_lookup)
         
         self.population = None
         self.retail_manager = None
@@ -202,42 +204,78 @@ class SimulationEngine:
         if not written_files:
             return []
 
-        # Read back all period files and combine into a single DataFrame
-        combined = pd.concat(
-            [pd.read_parquet(f) for f in written_files], ignore_index=True
-        )
+        # Return the list of period parquet paths directly.
+        # The caller is responsible for merging them on-disk via PyArrow
+        # so that the full dataset is never materialised in RAM.
+        return written_files
 
-        # Clean up temp files
-        for f in written_files:
-            try:
-                f.unlink()
-            except OSError:
-                pass
-        try:
-            tmp_dir.rmdir()
-        except OSError:
-            pass  # not empty — leave it
-
-        return [combined]
+    def _prepare_tt_lookup(self, tt_lookup):
+        """Converts nested dicts to DataFrames for fast vectorized indexing."""
+        if not tt_lookup:
+            return {}
+            
+        processed = {}
+        for mode, data in tt_lookup.items():
+            if not data:
+                continue
+                
+            # If data is a dict of dicts, convert to DataFrame
+            # data = {postcode: {rc_id: time}}
+            first_val = next(iter(data.values()))
+            if isinstance(first_val, dict):
+                df = pd.DataFrame.from_dict(data, orient='index')
+                processed[mode] = df
+            else:
+                # Flat dict {postcode: time} (e.g. walk time to nearest)
+                processed[mode] = pd.Series(data)
+        return processed
 
     def _lookup_travel_times(self, postcode_series, transport_mode_series, dest_series):
-        if not self.tt_lookup:
+        if not self.tt_lookup_dfs:
             return pd.Series(0.0, index=postcode_series.index)
             
-        pcs = postcode_series.values
-        tms = transport_mode_series.values
-        rcs = dest_series.values
-        out = np.zeros(len(pcs), dtype=np.float32)
+        pcs = postcode_series.astype(str).values
+        tms = transport_mode_series.astype(str).values
+        rcs = dest_series.astype(str).values
+        out = np.full(len(pcs), np.nan, dtype=np.float32)
 
-        for i in range(len(pcs)):
-            mode_data = self.tt_lookup.get(tms[i], {})
-            pc_data   = mode_data.get(pcs[i], None)
+        for mode in np.unique(tms):
+            if mode not in self.tt_lookup_dfs:
+                continue
+                
+            mask = (tms == mode)
+            lookup_obj = self.tt_lookup_dfs[mode]
             
-            if pc_data is None:
-                out[i] = np.nan
-            elif isinstance(pc_data, dict):
-                key = str(rcs[i])
-                out[i] = pc_data.get(key, np.nan)
-            else:
-                out[i] = float(pc_data)
+            if isinstance(lookup_obj, pd.DataFrame):
+                # Vectorized 2D lookup: (postcode, rc_id)
+                # Filter to current mode agents
+                m_pcs = pcs[mask]
+                m_rcs = rcs[mask]
+                
+                # Get integer indices for postcodes and RCs
+                # Use get_indexer to handle missing keys with -1
+                pc_idxs = lookup_obj.index.get_indexer(m_pcs)
+                rc_idxs = lookup_obj.columns.get_indexer(m_rcs)
+                
+                # Only attempt lookup where both keys exist
+                valid = (pc_idxs != -1) & (rc_idxs != -1)
+                if valid.any():
+                    # Fancy indexing on the underlying numpy array
+                    vals = lookup_obj.values[pc_idxs[valid], rc_idxs[valid]]
+                    
+                    # Map back to output array
+                    # We need the indices of 'mask' where valid is True
+                    mask_indices = np.where(mask)[0]
+                    out[mask_indices[valid]] = vals.astype(np.float32)
+            
+            elif isinstance(lookup_obj, pd.Series):
+                # Vectorized 1D lookup: (postcode)
+                m_pcs = pcs[mask]
+                pc_idxs = lookup_obj.index.get_indexer(m_pcs)
+                valid = (pc_idxs != -1)
+                if valid.any():
+                    vals = lookup_obj.values[pc_idxs[valid]]
+                    mask_indices = np.where(mask)[0]
+                    out[mask_indices[valid]] = vals.astype(np.float32)
+
         return pd.Series(out, index=postcode_series.index)
