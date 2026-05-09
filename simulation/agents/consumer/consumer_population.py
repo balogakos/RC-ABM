@@ -63,15 +63,18 @@ class ConsumerPopulation:
             blend_max = getattr(config, 'CLUSTER_BLEND_MAX', 0.7)
             test_mode = getattr(config, 'TEST_MODE', True)
 
-            # Assign subcluster label per agent
-            postcodes = (
-                self.attributes['Postcode'].values
-                if 'Postcode' in self.attributes.columns
-                else [None] * num_agents
-            )
-            self.attributes['Geo_Subcluster'] = [
-                assign_subcluster(pc, test_mode=test_mode) for pc in postcodes
-            ]
+            # Assign subcluster label per agent (vectorized if possible)
+            if test_mode:
+                self.attributes['Geo_Subcluster'] = np.random.choice(ALL_SUBCLUSTERS, size=num_agents)
+            else:
+                postcodes = (
+                    self.attributes['Postcode'].values
+                    if 'Postcode' in self.attributes.columns
+                    else [None] * num_agents
+                )
+                self.attributes['Geo_Subcluster'] = [
+                    assign_subcluster(pc, test_mode=test_mode) for pc in postcodes
+                ]
 
             # Per-agent blend weight drawn from U(blend_min, blend_max)
             self.attributes['Cluster_Blend_Weight'] = np.random.uniform(
