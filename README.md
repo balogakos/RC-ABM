@@ -168,4 +168,8 @@ Recent updates have introduced significant performance enhancements for large-sc
 When running simulations with 650,000+ agents, each individual run requires approximately 16GB of RAM. 
 - **Sequential Execution**: The `multi_runs/runner.py` script is set to sequential mode by default to avoid memory exhaustion on machines with less than 64GB RAM.
 - **Parallel Execution**: If your machine has 64GB+ RAM, you can manually enable parallelization in `runner.py` by using `multiprocessing.Pool`, but ensure `MAX_WORKERS` is carefully set.
+
+---
+
+This model continues to be refined as part of ongoing doctoral research. For inquiries or collaboration, please contact the Geographic Data Science Lab.
 3. **Control over Choice Logic**: Retail modelling often requires complex joint-choice algorithms that are more easily implemented and debugged using standard matrix operations than by attempting to shoehorn them into the Mesa `Step` scheduler.
