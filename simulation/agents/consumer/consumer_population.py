@@ -44,17 +44,24 @@ class ConsumerPopulation:
         })
         self.state_df.index = range(num_agents)  # Force a clean, unique range index
 
-        # Agent-specific social behavior traits
+        # --- New Social Influence Traits ---
+        c_min, c_max = getattr(config, 'CONFORMITY_RANGE', [0.1, 0.5])
+        b_min, b_max = getattr(config, 'SOCIAL_OPENNESS_RANGE', [0.1, 1.0])
+        
+        self.state_df['Conformity_Coefficient'] = np.random.uniform(c_min, c_max, num_agents)
+        self.state_df['Social_Openness']        = np.random.uniform(b_min, b_max, num_agents)
+
+        # [LEGACY/FALLBACK] - Keeping for compatibility with old spatial_diffusion
         if getattr(config, 'RANDOMIZE_SOCIAL_ATTRIBUTES', False):
             # Randomized personality (0.0 to 1.0)
             self.state_df['Diffusion_Weight']    = np.random.uniform(0.0, 1.0, num_agents)
             self.state_df['Diffusion_Bandwidth'] = np.random.uniform(0.0, 1.0, num_agents)
-            self.state_df['Conformity_Weight']   = np.random.uniform(0.0, 1.0, num_agents)
+            self.state_df['Conformity_Weight']   = 0.0 # Disabled daily echo chamber
         else:
             # Global defaults for all agents
             self.state_df['Diffusion_Weight']    = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.8)
             self.state_df['Diffusion_Bandwidth'] = getattr(config, 'DEMOGRAPHIC_BANDWIDTH', 0.5)
-            self.state_df['Conformity_Weight']   = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.2)
+            self.state_df['Conformity_Weight']   = 0.0 # Disabled daily echo chamber
 
         # --- Geodemographic Subcluster Integration ---
         geo_enabled = getattr(config, 'GEODEMOGRAPHIC_ENABLED', True) and _GEO_AVAILABLE
