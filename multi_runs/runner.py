@@ -114,6 +114,12 @@ def run_single_iteration(run_id):
     consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents)
     
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
+    
+    # Thresholding: Zero out extremely low utilities to speed up softmax choice logic
+    THRESHOLD = 0.4
+    for mat in utility_matrices.values():
+        mat[mat < THRESHOLD] = 0.0
+        
     results_dir = Path(ROOT_DIR) / "multi_runs" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     
