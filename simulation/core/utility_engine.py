@@ -55,7 +55,9 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
         else:
             group_key = agent_pcs.values
 
-        # Optimization: group first, compute max, then map back to avoid expensive transform on wide DF
+        # Optimization: group first, compute max per group, then map back to agents.
+        # This is significantly faster than transform('max') for wide dataframes
+        # because it performs the max calculation on a much smaller reduced set.
         group_maxes = relevant_utils.groupby(group_key).max()
         local_maxes = group_maxes.loc[group_key]
         local_maxes.index = relevant_utils.index # Align indices for math
