@@ -55,19 +55,16 @@ def apply_choice_modifiers(relevant_utils, state_df_or_attribs, shoppers_idx,
         else:
             group_key = agent_pcs.values
 
-        temp_df = relevant_utils.copy()
-        temp_df['_group'] = group_key
-        local_maxes = temp_df.groupby('_group').transform('max')
-        
-        # Clean up internal grouping column if pandas hasn't already removed it
-        if '_group' in local_maxes.columns:
-            local_maxes = local_maxes.drop(columns=['_group'])
+        # Optimization: group first, compute max, then map back to avoid expensive transform on wide DF
+        group_maxes = relevant_utils.groupby(group_key).max()
+        local_maxes = group_maxes.loc[group_key]
+        local_maxes.index = relevant_utils.index # Align indices for math
             
         if isinstance(conformity, pd.Series):
             # Element-wise lerp: (1-c)*U + c*max_U
             relevant_utils = relevant_utils.mul(1 - conformity, axis=0) + local_maxes.mul(conformity, axis=0)
         else:
-            relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * conformity)
+            relevant_utils = (relevant_utils * (1 - conformity)) + (local_maxes * (conformity))
 
     # Distance Sensitivity (beta scale)
     dist_sens = getattr(config, 'DISTANCE_SENSITIVITY', 1.0)
