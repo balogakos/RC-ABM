@@ -17,37 +17,9 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
         top_center = relevant_utils.sum(axis=0).idxmax()
         relevant_utils[top_center] *= intervention_mult
 
-    # Neighbourhood Conformity ("Echo Chamber" effect)
-    # Use agent-specific conformity weight if available, else fallback to config
-    if 'Conformity_Weight' in state_df_or_attribs.columns:
-        conformity = state_df_or_attribs.loc[shoppers_idx, 'Conformity_Weight']
-    else:
-        conformity = getattr(config, 'NEIGHBOURHOOD_CONFORMITY', 0.0)
-
-    if (isinstance(conformity, pd.Series) or conformity > 0.0) and has_postcode and 'Postcode' in state_df_or_attribs.columns:
-        # Use agent-specific diffusion weight if available
-        if 'Diffusion_Weight' in state_df_or_attribs.columns:
-            demo_weight = state_df_or_attribs.loc[shoppers_idx, 'Diffusion_Weight']
-        else:
-            demo_weight = getattr(config, 'DEMOGRAPHIC_DIFFUSION_WEIGHT', 0.0)
-        agent_pcs   = state_df_or_attribs.loc[shoppers_idx, 'Postcode'].str[:3].fillna('UNK')
-
-        has_age = 'age_years'      in state_df_or_attribs.columns
-        has_inc = 'salary_yearly'  in state_df_or_attribs.columns
-
-        is_demo_active = (demo_weight > 0.0).any() if isinstance(demo_weight, pd.Series) else demo_weight > 0.0
-        if is_demo_active and has_age and has_inc:
-            # Age bands: young (<30), mid (30-50), senior (>50)
-            ages = state_df_or_attribs.loc[shoppers_idx, 'age_years'].fillna(35)
-            age_bands = pd.cut(ages, bins=[0, 30, 50, 150],
-                               labels=['Y', 'M', 'S'], right=False)
-
-            # Income quartiles computed on the active subsample
-            incomes = state_df_or_attribs.loc[shoppers_idx, 'salary_yearly'].fillna(0)
-            try:
-                inc_bands = pd.qcut(incomes, q=4,
-                                    labels=['q1', 'q2', 'q3', 'q4'],
-                                    duplicates='drop')
+    # --- MODIFIED: Daily Neighbourhood Conformity is now handled by the 
+    # periodic additive mechanism in spatial_diffusion.py to speed up daily steps.
+    
     # Distance Sensitivity (beta scale)
     dist_sens = getattr(config, 'DISTANCE_SENSITIVITY', 1.0)
     if dist_sens != 1.0:
