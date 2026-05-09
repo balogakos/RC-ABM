@@ -233,7 +233,7 @@ class SimulationEngine:
                 processed[mode] = pd.Series(data)
         return processed
 
-    def _lookup_travel_times(self, postcode_series, transport_mode_series, dest_series):
+    def _lookup_travel_times(self, postcode_series: pd.Series, transport_mode_series: pd.Series, dest_series: pd.Series) -> pd.Series:
         if not self.tt_lookup_dfs:
             return pd.Series(0.0, index=postcode_series.index)
             
