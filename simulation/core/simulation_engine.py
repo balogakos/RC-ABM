@@ -72,7 +72,7 @@ class SimulationEngine:
                     'Postcode': self.population.state_df.loc[idx, 'Postcode'].values,
                     'Trip_Type': 'grocery', 'Retail_Centre': 'ONLINE',
                     'Grocery_Mode': 'online', 'Transport_Mode': None,
-                    'Travel_Time_Min': 0.0, 'Utility_Modifier': 1.0, 'Utility_Score': 0.0
+                    'Utility_Modifier': 1.0, 'Utility_Score': 0.0
                 }))
 
             # 3. Trip Chaining Logic
@@ -89,15 +89,25 @@ class SimulationEngine:
                 will_chain.loc[chain_candidates] = np.random.rand(len(chain_candidates)) < 0.5
             
             if will_chain.any():
-                cb = pd.Series([[] for _ in range(len(self.population.state_df))], index=self.population.state_df.index)
-                for t, mask in trips_to_place.items():
-                    for i in self.population.state_df.index[mask & will_chain]:
-                        cb[i].append(t)
+                # Vectorized Chaining: Instead of a list-of-lists, we use a boolean matrix or 
+                # a more efficient grouping.
+                chaining_idx = self.population.state_df.index[will_chain]
                 
-                cb_tuples = cb[will_chain].apply(tuple)
-                for combo_tuple, idx_series in cb_tuples.groupby(cb_tuples):
-                    combo_list = list(combo_tuple)
+                # Identify which combinations of trips these agents are taking
+                # We can use a bitmask or just string-join the trip types
+                combo_strings = pd.Series("", index=chaining_idx)
+                for t, mask in trips_to_place.items():
+                    m_chain = mask & will_chain
+                    if m_chain.any():
+                        # Append trip type to the string for these agents
+                        combo_strings.loc[m_chain.index[m_chain[m_chain].index.isin(chaining_idx)]] += t + "|"
+                
+                # Group agents by their unique combination of trips
+                for combo_str, idx_series in combo_strings.groupby(combo_strings):
+                    if not combo_str: continue
+                    combo_list = combo_str.strip("|").split("|")
                     shoppers_idx = idx_series.index
+                    
                     dests, modes, scores = self.population.choose_chained_destinations(
                         combo_list, shoppers_idx, grocery_mode_series,
                         self.utility_matrices, self.amenity_binary)
@@ -107,7 +117,6 @@ class SimulationEngine:
                         v_idx = dests[valid].index
                         pc_series = self.population.state_df.loc[v_idx, 'Postcode']
                         tm_series = modes.loc[v_idx].fillna('drive')
-                        tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
                         
                         for t_type in combo_list:
                             util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
@@ -124,7 +133,7 @@ class SimulationEngine:
                                 'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                                 'Postcode': pc_series.values, 'Trip_Type': t_type,
                                 'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
-                                'Transport_Mode': modes.loc[v_idx].values, 'Travel_Time_Min': tt_series.values,
+                                'Transport_Mode': modes.loc[v_idx].values,
                                 'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
                             }))
                             trips_to_place[t_type].loc[v_idx] = False
@@ -143,7 +152,6 @@ class SimulationEngine:
                     v_idx = dests[valid].index
                     pc_series = self.population.state_df.loc[v_idx, 'Postcode']
                     tm_series = modes.loc[v_idx].fillna('drive')
-                    tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
                     
                     util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
                     f_mults = pd.Series(1.0, index=v_idx)
@@ -159,7 +167,7 @@ class SimulationEngine:
                         'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                         'Postcode': pc_series.values, 'Trip_Type': t_type,
                         'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
-                        'Transport_Mode': modes.loc[v_idx].values, 'Travel_Time_Min': tt_series.values,
+                        'Transport_Mode': modes.loc[v_idx].values,
                         'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
                     }))
 
@@ -246,12 +254,13 @@ class SimulationEngine:
         Records the travel time for each agent trip using vectorized lookups.
         Handles both single-value times and location-specific destination times.
         """
+        # Pre-convert indices to strings/categories once to avoid daily cost
         if not self.tt_lookup_dfs:
             return pd.Series(0.0, index=postcode_series.index)
             
-        pcs = postcode_series.astype(str).values
-        tms = transport_mode_series.astype(str).values
-        rcs = dest_series.astype(str).values
+        pcs = postcode_series.values
+        tms = transport_mode_series.values
+        rcs = dest_series.values
         out = np.full(len(pcs), np.nan, dtype=np.float32)
 
         for mode in np.unique(tms):
