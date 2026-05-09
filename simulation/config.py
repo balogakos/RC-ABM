@@ -21,6 +21,11 @@ centres by store type (Foodstore / Convenience Store) before selecting.
 
 import os
 
+EVAL_FREQ = 10
+SOCIAL_SCALING_ALPHA = 0.05
+CONFORMITY_RANGE = [0.1, 0.5]
+SOCIAL_OPENNESS_RANGE = [0.1, 1.0]
+
 # --- Directories ---
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))   # simulation/
 PROJECT_ROOT = os.path.dirname(BASE_DIR)                    # Retail_ABM/
@@ -71,7 +76,7 @@ RANDOMIZE_SOCIAL_ATTRIBUTES = True
 # or if an agent is missing its specific trait.
 DEMOGRAPHIC_DIFFUSION_WEIGHT = 0.8
 DEMOGRAPHIC_BANDWIDTH        = 0.5
-NEIGHBOURHOOD_CONFORMITY     = 0.2
+# NOTE: Neighbourhood Conformity is now handled by the new additive mechanism every 10 days.
 
 # --- Geodemographic Subcluster Integration ---
 # Toggle the entire feature on/off (False = ablation run, no cluster blending)
