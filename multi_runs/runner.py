@@ -34,7 +34,10 @@ def _clean_rc_id(x):
     return s[:-2] if s.endswith('.0') else s
 
 def load_simulation_data(n_agents: int = None) -> tuple:
-    """Standalone loader for ensemble runs using trip-specific files."""
+    """
+    Standalone loader for ensemble runs using trip-specific files.
+    Returns (consumers_df, utility_matrices, amenity_binary, tt_lookup).
+    """
     print(f"Loading 6 trip-specific utility datasets from {config.UTILITY_DIR}...")
     
     trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
