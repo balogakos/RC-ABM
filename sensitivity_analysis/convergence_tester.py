@@ -19,7 +19,7 @@ import simulation.config as config
 from simulation.core.simulation_engine import SimulationEngine
 from multi_runs.runner import load_simulation_data
 
-def run_convergence_analysis(n_agents=60000, total_days=600, eval_freq=30):
+def run_convergence_analysis(n_agents=30000, total_days=360, eval_freq=30):
     """
     Runs a long-term simulation (600 days) to monitor the steady-state
     convergence of retail market behaviors.
@@ -96,10 +96,21 @@ def run_convergence_analysis(n_agents=60000, total_days=600, eval_freq=30):
         
         print(f"  Market Churn: {market_delta:.4f} | Mode Churn: {mode_delta:.4f} | Avg Utility: {metrics['Avg_Utility']:.3f}")
         
-        # Clean up temp files
+        # Clean up temp files safely
         for f in period_visits:
-            f.unlink()
-        period_visits[0].parent.rmdir()
+            try:
+                if f.exists():
+                    f.unlink()
+            except Exception as e:
+                print(f"  Warning: Could not delete temp file {f.name}: {e}")
+        
+        # Only try to remove the directory if it's empty
+        tmp_dir = period_visits[0].parent
+        try:
+            if tmp_dir.exists() and not any(tmp_dir.iterdir()):
+                tmp_dir.rmdir()
+        except Exception:
+            pass # Ignore if other processes are using it
 
     # 5. Final Report
     history_df = pd.DataFrame(history)
@@ -120,4 +131,4 @@ def run_convergence_analysis(n_agents=60000, total_days=600, eval_freq=30):
 
 if __name__ == "__main__":
     # Run with 60k agents as suggested for long-term stability
-    run_convergence_analysis(n_agents=60000, total_days=600, eval_freq=30)
+    run_convergence_analysis(n_agents=30000, total_days=360, eval_freq=30)
