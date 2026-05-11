@@ -26,14 +26,12 @@ Assignment Modes
 ============================================================
 SUBCLUSTER ASSIGNMENT — PRODUCTION MODE
 ------------------------------------------------------------
-Replace the random assignment below with a postcode → subcluster
-lookup once the external lookup table is available.
-Set TEST_MODE = False in config.py to activate.
+Assignment is now handled in the PRE-PROCESSING stage using
+the `postcode_subcluster_map.csv`. 
 
-Expected format: dict mapping postcode sector prefix to subcluster label
-  e.g. POSTCODE_SUBCLUSTER_LOOKUP = {'L1': '1.2', 'WA10': '3.1', ...}
-
-POSTCODE_SUBCLUSTER_LOOKUP = {}  # <-- insert lookup dict here
+The `ConsumerPopulation` class will automatically detect the 
+'Geo_Subcluster' column in the agent data. This file serves
+as a fallback or for dynamic assignment of new agents.
 ============================================================
 """
 

@@ -70,8 +70,12 @@ class ConsumerPopulation:
             blend_max = getattr(config, 'CLUSTER_BLEND_MAX', 0.7)
             test_mode = getattr(config, 'TEST_MODE', True)
 
-            # Assign subcluster label per agent (vectorized if possible)
-            if test_mode:
+            # Assign subcluster label per agent
+            # Check if 'Geo_Subcluster' is already in the data (pre-assigned via spatial match)
+            if 'Geo_Subcluster' in self.attributes.columns:
+                # We use the pre-assigned column. No further assignment needed.
+                pass
+            elif test_mode:
                 self.attributes['Geo_Subcluster'] = np.random.choice(ALL_SUBCLUSTERS, size=num_agents)
             else:
                 postcodes = (
