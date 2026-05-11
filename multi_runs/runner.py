@@ -21,10 +21,7 @@ import config
 from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
-# --- Configuration ---
-# NOTE: Each 656k agent run requires ~16GB RAM. Sequential mode is default
-# to avoid memory exhaustion on machines with less than 64GB RAM.
-TEST_MODE = False    # SET THIS TO False FOR FINAL PAPER RESULTS (656k agents)
+# --- Ensemble Configuration ---
 NUM_RUNS  = 5      # Number of iterations to average out uncertainty
 DAYS      = 180
 EVAL_FREQ = 30
@@ -110,13 +107,16 @@ def run_single_iteration(run_id):
     print(f"--- [Run {run_id}] Initializing process... ---")
     
     # Load data locally in each process (safer for multiprocessing)
-    n_agents = 100 if TEST_MODE else None
+    # Use config to determine test mode
+    test_mode = getattr(config, 'TEST_MODE', False)
+    n_agents = 100 if test_mode else None
     consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents)
     
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
     
     # Thresholding: Zero out extremely low utilities to speed up softmax choice logic
-    THRESHOLD = 0.5
+    # Aligned with main.py logic
+    THRESHOLD = 0.1
     for mat in utility_matrices.values():
         mat[mat < THRESHOLD] = 0.0
         
