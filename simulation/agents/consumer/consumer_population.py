@@ -71,21 +71,13 @@ class ConsumerPopulation:
             test_mode = getattr(config, 'TEST_MODE', True)
 
             # Assign subcluster label per agent
-            # Check if 'Geo_Subcluster' is already in the data (pre-assigned via spatial match)
+            # All agents MUST have a pre-assigned 'Geo_Subcluster' column from the data
             if 'Geo_Subcluster' in self.attributes.columns:
-                # We use the pre-assigned column. No further assignment needed.
                 pass
-            elif test_mode:
-                self.attributes['Geo_Subcluster'] = np.random.choice(ALL_SUBCLUSTERS, size=num_agents)
             else:
-                postcodes = (
-                    self.attributes['Postcode'].values
-                    if 'Postcode' in self.attributes.columns
-                    else [None] * num_agents
-                )
-                self.attributes['Geo_Subcluster'] = [
-                    assign_subcluster(pc, test_mode=test_mode) for pc in postcodes
-                ]
+                # Critical fallback: If data hasn't been processed, default to 'none' and warn
+                print("WARNING: 'Geo_Subcluster' column missing in agent data. Defaulting to 'none'.")
+                self.attributes['Geo_Subcluster'] = 'none'
 
             # Per-agent blend weight drawn from U(blend_min, blend_max)
             self.attributes['Cluster_Blend_Weight'] = np.random.uniform(
