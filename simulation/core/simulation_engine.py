@@ -12,6 +12,18 @@ class SimulationEngine:
         self.utility_matrices = utility_matrices
         self.amenity_binary = amenity_binary
         
+        # Cache original utility scores to support social decay
+        # This allows us to decay the "reputation" without shrinking the "geography"
+        self.base_utilities = {k: v.copy() for k, v in utility_matrices.items()}
+
+        # 1. Apply "Warm Start": Initial random social reputation
+        start_sigma = getattr(config, 'SOCIAL_START_SIGMA', 0.0)
+        if start_sigma > 0:
+            for matrix in self.utility_matrices.values():
+                # Add random noise N(0, sigma) to simulate pre-existing brand loyalty
+                noise = np.random.normal(0, start_sigma, size=matrix.shape).astype(np.float16)
+                matrix.update(matrix + noise)
+        
         # Pre-process travel time lookup for vectorized access
         self.tt_lookup_dfs = self._prepare_tt_lookup(tt_lookup)
         
@@ -180,7 +192,7 @@ class SimulationEngine:
                     messages = self.retail_manager.evaluate_centres(eval_df, self.utility_matrices)
                     for msg in messages: log(msg)
 
-                    diffusion_msgs = self.population.apply_social_influence(eval_df, self.utility_matrices)
+                    diffusion_msgs = self.population.apply_social_influence(eval_df, self.utility_matrices, self.base_utilities)
                     for msg in diffusion_msgs: log(msg)
 
                     # Attach Geo_Subcluster before flushing

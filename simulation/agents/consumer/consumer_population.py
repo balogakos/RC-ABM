@@ -136,8 +136,8 @@ class ConsumerPopulation:
         """Refills stock after shopping based on trip type."""
         self.state_df = consumption.update_stock_after_shop(self.state_df, shopping_mask, grocery_modes)
 
-    def apply_social_influence(self, visits_df, utility_matrices):
-        """Applies spatial diffusion (word-of-mouth)."""
+    def apply_social_influence(self, visits_df, utility_matrices, base_utility_matrices=None):
+        """Applies spatial diffusion (word-of-mouth) with optional social decay."""
         return spatial_diffusion.apply_spatial_diffusion_bonus(
-            visits_df, self.attributes, utility_matrices
+            visits_df, self.attributes, utility_matrices, base_utility_matrices
         )

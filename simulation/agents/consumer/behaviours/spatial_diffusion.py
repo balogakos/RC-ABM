@@ -4,17 +4,30 @@ import config
 # NOTE: demographic_similarity_scores is moved to word_of_mouth.py or utility_engine.py
 from simulation.core.utility_engine import demographic_similarity_scores
 
-def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
+def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices, base_utility_matrices=None):
     """
-    Implements a socially mediated utility adjustment mechanism based on:
-    I(i,c) = C_i * S_i * P(s,c)
-    U_new = U + alpha * I(i,c)
+    Implements a socially mediated utility adjustment mechanism.
+    Now includes a DECAY mechanism to ensure long-term convergence.
+    
+    Logic:
+    1. Decay existing social influence: U = Base + (U_old - Base) * Decay
+    2. Add new influence: U_new = U + alpha * I(i,c)
     """
     if visits_df.empty or 'Postcode' not in attributes_df.columns:
         return []
 
     messages = []
     alpha = getattr(config, 'SOCIAL_SCALING_ALPHA', 0.05)
+    decay = getattr(config, 'SOCIAL_DECAY_FACTOR', 1.0)
+    
+    # 0. Apply Decay (reverting towards base geography)
+    if decay < 1.0 and base_utility_matrices is not None:
+        for key, matrix in utility_matrices.items():
+            if key in base_utility_matrices:
+                base = base_utility_matrices[key]
+                # U = Base + (U - Base) * Decay
+                # This only shrinks the "Social" part, keeps "Distance" fixed.
+                matrix.update(base + (matrix - base) * decay)
     
     # 1. Pre-process mapping: Agent -> Postcode Sector (first 3 chars)
     if 'household' in attributes_df.columns:
@@ -79,15 +92,15 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
     total_updates = 0
     
     # Pre-fetch agent traits
-    c_coeff = attributes_df['Conformity_Coefficient'] if 'Conformity_Coefficient' in attributes_df.columns else 0.3
-    b_open  = attributes_df['Social_Openness'] if 'Social_Openness' in attributes_df.columns else 0.5
+    c_coeff = attributes_df['Conformity_Coefficient'].values if 'Conformity_Coefficient' in attributes_df.columns else 0.3
+    b_open  = attributes_df['Social_Openness'].values if 'Social_Openness' in attributes_df.columns else 0.5
     
     for centre in affected_centres:
         centre_str = str(centre)
         
         # Popularity vector (mapped to agents via their postcode sector)
         c_pop_map = pop_df[pop_df['Retail_Centre'] == centre].set_index('Postcode_Sector')['P_sc']
-        p_vec = agent_to_postcode.map(c_pop_map).fillna(0)
+        p_vec = agent_to_postcode.map(c_pop_map).fillna(0).values
         
         if (p_vec == 0).all(): continue
         
@@ -96,7 +109,8 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
             centroid = visitor_centroids.loc[centre].values
             # Vectorized Euclidean Distance
             d_i = np.sqrt(((agent_demo_norm.values - centroid)**2).sum(axis=1))
-            s_vec = np.exp(-d_i / np.maximum(b_open.values, 1e-6))
+            # Handle scalar vs array for b_open
+            s_vec = np.exp(-d_i / np.maximum(b_open, 1e-6))
         else:
             s_vec = np.ones(len(agent_to_postcode))
             
@@ -106,13 +120,16 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices):
         # Additive Update: U = U + alpha * I
         boost_term = (alpha * i_vec).astype(np.float16)
         
+        # Convert to Series once for efficient reindexing in the matrix loop
+        boost_series = pd.Series(boost_term, index=agent_to_postcode.index)
+        
         updated_any = False
         for matrix in utility_matrices.values():
             if centre_str in matrix.columns:
-                # Align indices: only update agents present in the matrix
-                common_idx = matrix.index.intersection(boost_term.index)
+                # Optimized index intersection update
+                common_idx = matrix.index.intersection(boost_series.index)
                 if not common_idx.empty:
-                    matrix.loc[common_idx, centre_str] += boost_term.loc[common_idx]
+                    matrix.loc[common_idx, centre_str] += boost_series.loc[common_idx]
                     updated_any = True
         
         if updated_any:

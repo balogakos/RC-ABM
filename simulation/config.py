@@ -127,3 +127,11 @@ RETAIL_PEER_SIZE_WEIGHT = [0.3, 0.7]
 #   Mid  β (e.g. 5.0)  → clear preference for top options (recommended)
 #   High β (e.g. 15.0) → near-deterministic — agent almost always picks the best
 SOFTMAX_BETA = 5.0
+
+# --- Social Behavior & Decay ---
+SOCIAL_SCALING_ALPHA   = 0.05
+SOCIAL_DECAY_FACTOR    = 0.75    # 0.75 = 25% decay per period. Ensures 180-day convergence.
+SOCIAL_START_SIGMA     = 0.05    # Standard deviation of the initial random social reputation.
+GEODEMOGRAPHIC_ENABLED = True
+DISTANCE_SENSITIVITY   = 1.0
+RETAIL_INTERVENTION    = 1.0
