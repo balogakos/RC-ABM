@@ -45,13 +45,12 @@ class SimulationEngine:
         current_period = []    # DataFrames for the current eval window only
 
         # Build subcluster map once upfront so it is available during flush
-        subcluster_map = (
-            self.population.attributes
-            .set_index('household')['Geo_Subcluster']
-            if 'Geo_Subcluster' in self.population.attributes.columns
-               and 'household' in self.population.attributes.columns
-            else None
-        )
+        subcluster_map = None
+        if 'Geo_Subcluster' in self.population.attributes.columns and 'household' in self.population.attributes.columns:
+            # Ensure unique string mapping even if agents were sampled with replacement
+            _map_df = self.population.attributes[['household', 'Geo_Subcluster']].copy()
+            _map_df['household'] = _map_df['household'].astype(str)
+            subcluster_map = _map_df.drop_duplicates('household').set_index('household')['Geo_Subcluster']
 
         for day in range(1, days + 1):
             day_start = time.time()
@@ -97,10 +96,10 @@ class SimulationEngine:
                 # We can use a bitmask or just string-join the trip types
                 combo_strings = pd.Series("", index=chaining_idx)
                 for t, mask in trips_to_place.items():
-                    m_chain = mask & will_chain
-                    if m_chain.any():
-                        # Append trip type to the string for these agents
-                        combo_strings.loc[m_chain.index[m_chain[m_chain].index.isin(chaining_idx)]] += t + "|"
+                    # Update combo strings for agents who are chaining AND have this trip triggered
+                    affected_in_chain = mask[will_chain]
+                    if affected_in_chain.any():
+                        combo_strings.loc[affected_in_chain[affected_in_chain].index] += t + "|"
                 
                 # Group agents by their unique combination of trips
                 for combo_str, idx_series in combo_strings.groupby(combo_strings):
