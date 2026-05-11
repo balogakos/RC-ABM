@@ -23,8 +23,8 @@ from simulation.core.simulation_engine import SimulationEngine
 from simulation.core.constants import TRANSPORT_MODES
 import visualization
 
-# --- Configuration Override ---
-TEST_MODE = False
+# --- Configuration ---
+# All agents now use pre-assigned Geo_Subcluster labels from processed data
 
 def _clean_rc_id(x):
     try:
@@ -133,12 +133,10 @@ class RetailABMApp:
 
     def load_data(self, n_agents=None):
         """Unified data loader for the Tkinter GUI using trip-specific files."""
-        # Use config to find the right directory, but allow override via local TEST_MODE
+        # Use config to find the right directory
         base_utility_dir = config.UTILITY_DIR
-        if TEST_MODE and "testing" not in str(base_utility_dir):
-            base_utility_dir = os.path.join(base_utility_dir, "testing")
             
-        self.log(f"Loading 6 trip-specific datasets (Test Mode: {TEST_MODE})...")
+        self.log("Loading 6 trip-specific datasets...")
         
         utility_matrices = {}
         consumers = None
