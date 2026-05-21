@@ -189,84 +189,109 @@ def add_scale_bar(ax, length_km=5, position=(0.06, 0.06)):
             ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='black', zorder=6,
             bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
 
+def zoom_out(ax, fraction=0.1):
+    """Expand axis limits by a fraction to give extra map padding."""
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    dx = (xmax - xmin) * fraction
+    dy = (ymax - ymin) * fraction
+    ax.set_xlim(xmin - dx, xmax + dx)
+    ax.set_ylim(ymin - dy, ymax + dy)
+
 # =========================================================================
 # --- 5. Plotting 2x2 Layout ---
 # =========================================================================
-print("Generating 2x2 spatial maps and correlation plot...")
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 14))
+print("Generating maps and separate correlation plot outputs...")
 
-# Common styling dictionary for points
-marker_style = dict(edgecolor='black', linewidth=0.8, alpha=0.9)
+# Prepare consistent binned categories for the three maps to ensure stable legend ranks
+def safe_qcut(series, q=5):
+    try:
+        cuts = pd.qcut(series.replace([np.inf, -np.inf], np.nan).fillna(0), q=q, labels=False, duplicates='drop')
+        # If qcut returned float dtype or all NaN, fallback to rank-based cut
+        if cuts.isnull().all():
+            return pd.Series(np.zeros(len(series)), index=series.index)
+        return cuts.astype(float) + 1.0
+    except Exception:
+        # fallback: equal-frequency via rank
+        ranks = series.rank(method='first').fillna(0)
+        return pd.qcut(ranks, q=min(q, int(len(series.dropna()))), labels=False, duplicates='drop').astype(float) + 1.0
 
-# Define marker sizes scaled by Total POIs
-sizes = np.clip(gdf_points['center_size'] * 1.5, 15, 600)
+# Create binned numeric categories 1..5 for consistent legends
+gdf_points['sim_bin'] = safe_qcut(gdf_points['sim_visits'], q=5)
+gdf_points['real_bin'] = safe_qcut(gdf_points['real_visits'], q=5)
 
-# Map 1: Simulated Activity (Panel A)
-sc1 = gdf_points.plot(
-    ax=ax1, 
-    column='sim_visits', 
-    cmap='Blues', 
-    scheme='Quantiles', 
-    k=5,
-    markersize=sizes, 
-    legend=True,
-    legend_kwds={'loc': 'upper right', 'title': 'Simulated Visits', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax1.set_title('(A) Simulated Activity', fontweight='bold', fontsize=14, loc='left', pad=10)
-
-# Map 2: Real-World Baseline (Panel B)
-sc2 = gdf_points.plot(
-    ax=ax2, 
-    column='real_visits', 
-    cmap='Blues', 
-    scheme='Quantiles', 
-    k=5,
-    markersize=sizes, 
-    legend=True,
-    legend_kwds={'loc': 'upper right', 'title': 'Baseline Visits', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax2.set_title('(B) Real-World Baseline', fontweight='bold', fontsize=14, loc='left', pad=10)
-
-# Map 3: Deviations/Residuals (Panel C)
-# Use a divergent colormap centered around 0 (white)
+# For difference, create symmetric bins around zero
 max_diff = max(abs(gdf_points['difference'].min()), abs(gdf_points['difference'].max()))
 if max_diff == 0:
-    max_diff = 1
+    max_diff = 1.0
+diff_bins = np.linspace(-max_diff, max_diff, 6)
+gdf_points['diff_bin'] = pd.cut(gdf_points['difference'].fillna(0), bins=diff_bins, labels=False, include_lowest=True).astype(float) + 1.0
 
-sc3 = gdf_points.plot(
-    ax=ax3, 
-    column='difference', 
-    cmap='RdBu', 
-    scheme='UserDefined',
-    classification_kwds={'bins': [-max_diff*0.5, -max_diff*0.1, max_diff*0.1, max_diff*0.5]},
-    markersize=sizes, 
+# Common styling and sizes
+marker_style = dict(edgecolor='black', linewidth=0.6, alpha=0.9)
+sizes = np.clip(gdf_points['center_size'] * 1.5, 15, 600)
+
+# FIGURE 1: Three maps side-by-side
+fig_maps, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 6))
+
+sc1 = gdf_points.plot(
+    ax=ax1,
+    column='sim_bin',
+    cmap='Blues',
+    categorical=True,
+    markersize=sizes,
     legend=True,
-    legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
+    legend_kwds={'title': 'Simulated (quantiles)', 'fontsize': 'small'},
     **marker_style,
     zorder=6
 )
-ax3.set_title('(C) Simulation Residuals (Sim - Real)', fontweight='bold', fontsize=14, loc='left', pad=10)
+ax1.set_title('(A) Simulated Activity', fontweight='bold', fontsize=12, loc='left')
 
-# Add basemaps and hide axis grids/labels on Map Axes
-for ax in [ax1, ax2, ax3]:
-    try:
-        ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels)
-    except Exception as e:
-        print(f"Warning: Failed to load basemap: {e}. Plotting map geometry without background.")
-    # Draw Liverpool administrative boundary (if available) under the points
+sc2 = gdf_points.plot(
+    ax=ax2,
+    column='real_bin',
+    cmap='Blues',
+    categorical=True,
+    markersize=sizes,
+    legend=True,
+    legend_kwds={'title': 'Baseline (quantiles)', 'fontsize': 'small'},
+    **marker_style,
+    zorder=6
+)
+ax2.set_title('(B) Real-World Baseline', fontweight='bold', fontsize=12, loc='left')
+
+sc3 = gdf_points.plot(
+    ax=ax3,
+    column='diff_bin',
+    cmap='RdBu',
+    categorical=True,
+    markersize=sizes,
+    legend=True,
+    legend_kwds={'title': 'Residual (binned)', 'fontsize': 'small'},
+    **marker_style,
+    zorder=6
+)
+ax3.set_title('(C) Simulation Residuals', fontweight='bold', fontsize=12, loc='left')
+
+# Add boundary, north arrow and scale bar for each map axis
+for ax in (ax1, ax2, ax3):
     if gdf_boundary is not None:
         try:
             gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
         except Exception as e:
             print(f"Warning: Failed to draw Liverpool boundary: {e}")
     ax.set_axis_off()
-    # Add map elements: North arrow and Scale bar (moved further into corner)
+    zoom_out(ax, 0.10)
     add_north_arrow(ax)
-    add_scale_bar(ax, position=(0.98, 0.03))
+    # move further into corner
+    add_scale_bar(ax, position=(0.99, 0.02))
+
+# Save the maps figure
+maps_output = OUTPUTS_ROOT / 'retail_activity_maps.png'
+fig_maps.subplots_adjust(wspace=0.05)
+plt.savefig(maps_output, dpi=300, bbox_inches='tight')
+print(f"SUCCESS: Maps saved to: {maps_output}")
+plt.close(fig_maps)
 
 # =========================================================================
 # --- 6. Correlation Performance Plot (Panel D) ---
@@ -309,6 +334,127 @@ df_plot['centre_typ'] = df_plot['centre_typ'].map({
 # Styling options matching plot_results.py style rules
 custom_palette = {'Centre': '#3498db', 'Retail Park': '#e67e22', 'Unknown': '#7f8c8d'}
 
+# =========================================================================
+# --- 6. Correlation Performance Plot (separate figure) ---
+# =========================================================================
+print("Generating separate correlation plot...")
+
+# Prepare plotting data
+x_data = gdf_mapped['real_visits']
+y_data = gdf_mapped['sim_visits']
+n_centres = len(gdf_mapped)
+
+# Calculate statistics
+r_val, r_pval = stats.pearsonr(x_data, y_data)
+rho_val, rho_pval = stats.spearmanr(x_data, y_data)
+rmse = np.sqrt(np.mean((y_data - x_data)**2))
+mae = np.mean(np.abs(y_data - x_data))
+
+if PLOT_RANKED:
+    x_plot = gdf_mapped['real_visits'].rank()
+    y_plot = gdf_mapped['sim_visits'].rank()
+    x_label = 'Validation Data (Rank)'
+    y_label = 'Simulated Data (Rank)'
+    title_suffix = ' (Ranked)'
+else:
+    x_plot = gdf_mapped['real_visits']
+    y_plot = gdf_mapped['sim_visits']
+    x_label = 'Validation Data (Visits)'
+    y_label = 'Simulated Data (Visits)'
+    title_suffix = ' (Raw)'
+
+df_plot = gdf_mapped.copy()
+df_plot['x_plot'] = x_plot
+df_plot['y_plot'] = y_plot
+
+# Normalise centre type labels
+df_plot['centre_typ'] = df_plot['centre_typ'].map({
+    'centre': 'Centre',
+    'retail_park': 'Retail Park'
+}).fillna('Unknown')
+
+custom_palette = {'Centre': '#3498db', 'Retail Park': '#e67e22', 'Unknown': '#7f8c8d'}
+
+# FIGURE 2: Correlation plot
+fig_corr, axc = plt.subplots(1, 1, figsize=(8, 6))
+
+sns.scatterplot(
+    data=df_plot,
+    x='x_plot',
+    y='y_plot',
+    hue='centre_typ',
+    size='center_size',
+    sizes=(40, 400),
+    palette=custom_palette,
+    alpha=0.85,
+    edgecolor='black',
+    linewidth=0.8,
+    ax=axc,
+    legend=False  # we'll add custom legends
+)
+
+# Regression line
+sns.regplot(
+    data=df_plot,
+    x='x_plot',
+    y='y_plot',
+    scatter=False,
+    color='#e74c3c',
+    ax=axc,
+    line_kws={'linestyle': '--', 'linewidth': 2.0}
+)
+
+axc.set_title(f'Correlation Performance{title_suffix}', fontweight='bold', fontsize=13, loc='left')
+axc.set_xlabel(x_label, fontweight='bold', fontsize=11)
+axc.set_ylabel(y_label, fontweight='bold', fontsize=11)
+axc.spines['top'].set_visible(False)
+axc.spines['right'].set_visible(False)
+axc.spines['left'].set_linewidth(1.2)
+axc.spines['bottom'].set_linewidth(1.2)
+axc.tick_params(width=1.2, labelsize=10)
+axc.grid(False)
+
+# Combined size and regression legend (bottom-right)
+size_vals = df_plot['center_size'].dropna()
+if len(size_vals) == 0:
+    size_vals = pd.Series([100])
+minv, maxv = size_vals.min(), size_vals.max()
+rep_values = [10, 50, 100]
+smin, smax = 40, 400
+def map_area(raw):
+    r = max(minv, min(maxv, raw)) if maxv > minv else raw
+    if maxv == minv:
+        return (smin + smax) / 2.0
+    return smin + (r - minv) / (maxv - minv) * (smax - smin)
+handles_size = [axc.scatter([], [], s=map_area(v), color='gray', edgecolor='black') for v in rep_values]
+labels_size = [f'{v}' for v in rep_values]
+
+# Regression line handle
+reg_line = Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=2.0)
+
+# Combine both into a single legend in bottom-right corner
+combined_handles = handles_size + [reg_line]
+combined_labels = labels_size + ['Fitted Regression']
+leg_combined = axc.legend(combined_handles, combined_labels, title='Centre size (POIs)', 
+                          frameon=True, framealpha=0.95, loc='lower right', fontsize='medium')
+
+# Performance textbox
+stats_text = (
+    f"Pearson r: {r_val:.3f} (p: {r_pval:.2e})\n"
+    f"Spearman rho: {rho_val:.3f} (p: {rho_pval:.2e})\n"
+    f"RMSE: {rmse:.1f}\n"
+    f"MAE: {mae:.1f}\n"
+    f"Centres (n): {n_centres}"
+)
+axc.text(0.05, 0.95, stats_text, transform=axc.transAxes, ha='left', va='top', fontsize=9.0, fontweight='bold',
+         bbox=dict(facecolor='white', alpha=0.8, edgecolor='#cccccc', boxstyle='round,pad=0.4'))
+
+# Save correlation figure
+corr_output = OUTPUTS_ROOT / 'retail_activity_correlation.png'
+plt.tight_layout()
+plt.savefig(corr_output, dpi=300, bbox_inches='tight')
+print(f"SUCCESS: Correlation plot saved to: {corr_output}")
+plt.close(fig_corr)
 # Draw correlation scatter plot using Seaborn
 sns.scatterplot(
     data=df_plot,
@@ -347,7 +493,7 @@ ax4.spines['bottom'].set_linewidth(1.2)
 ax4.tick_params(width=1.2, labelsize=10)
 ax4.grid(False)
 
-# Build a single size legend (bottom-left) with simple representative bounds
+# Combined size and regression legend (bottom-right)
 size_vals = df_plot['center_size'].dropna()
 if len(size_vals) == 0:
     size_vals = pd.Series([100])
@@ -366,16 +512,16 @@ def map_area_from_bounds(raw):
 
 handles_size = [ax4.scatter([], [], s=map_area_from_bounds(v), color='gray', edgecolor='black') for v in rep_values]
 labels_size = [f'{v}' for v in rep_values]
-leg = ax4.legend(handles_size, labels_size, title='Centre size (POIs)', frameon=True, framealpha=0.95,
-                 loc='lower left', fontsize='medium')
-ax4.add_artist(leg)
 
-# Add legend for the fitted regression line in the bottom-right
+# Get regression line handle
 reg_lines = [ln for ln in ax4.get_lines() if ln.get_label() == 'Fitted Regression']
-if len(reg_lines) > 0:
-    reg_handle = reg_lines[0]
-    leg_reg = ax4.legend([reg_handle], ['Fitted Regression'], loc='lower right', frameon=True, framealpha=0.95, fontsize='small')
-    ax4.add_artist(leg_reg)
+reg_handle = reg_lines[0] if len(reg_lines) > 0 else Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=2.0)
+
+# Combine both into a single legend in bottom-right corner
+combined_handles = handles_size + [reg_handle]
+combined_labels = labels_size + ['Fitted Regression']
+leg = ax4.legend(combined_handles, combined_labels, title='Centre size (POIs)', frameon=True, framealpha=0.95,
+                 loc='lower right', fontsize='medium')
 
 # Add textbox with performance metrics in the top left corner (no overlaps)
 stats_text = (

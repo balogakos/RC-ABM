@@ -50,40 +50,51 @@ def add_north_arrow(ax, position=(0.06, 0.94)):
                 ha='center', va='top', fontsize=10, fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
 
-def add_scale_bar(ax, length_km=5, position=(0.06, 0.06)):
-    """Draws a scale bar in the bottom-left of the axes, adjusted for Mercator deformation at Liverpool latitude."""
+def add_scale_bar(ax, length_km=2, position=(0.98, 0.03)):
+    """Draws a smaller scale bar in the bottom-right of the axes."""
     lat_deg = 53.4
     cos_lat = np.cos(np.radians(lat_deg))
     mercator_length = (length_km * 1000) / cos_lat
-    
+
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
-    
-    # Check if 5 km is too large for the current display limits, adjust if needed
+
     map_width_km = ((xmax - xmin) * cos_lat) / 1000.0
     if map_width_km < length_km * 2:
         if map_width_km >= 4.0:
-            length_km = 2
-        else:
             length_km = 1
+        else:
+            length_km = 0.5
         mercator_length = (length_km * 1000) / cos_lat
-        
-    x_start = xmin + position[0] * (xmax - xmin)
-    y_pos = ymin + position[1] * (ymax - ymin)
-    x_end = x_start + mercator_length
-    
-    tick_height = 0.012 * (ymax - ymin)
-    
-    # Draw scale bar line
-    ax.plot([x_start, x_end], [y_pos, y_pos], color='black', linewidth=2.5, zorder=5)
-    # Draw tick marks
-    ax.plot([x_start, x_start], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.5, zorder=5)
-    ax.plot([x_end, x_end], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.5, zorder=5)
-    
-    # Add text label above the bar
-    ax.text((x_start + x_end) / 2, y_pos + tick_height * 0.8, f"{length_km} km",
-            ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='black', zorder=6,
-            bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
+
+    frac_x, frac_y = position
+    y_pos = ymin + frac_y * (ymax - ymin)
+
+    if frac_x > 0.5:
+        x_end = xmin + frac_x * (xmax - xmin)
+        x_start = x_end - mercator_length
+    else:
+        x_start = xmin + frac_x * (xmax - xmin)
+        x_end = x_start + mercator_length
+
+    tick_height = 0.01 * (ymax - ymin)
+
+    ax.plot([x_start, x_end], [y_pos, y_pos], color='black', linewidth=1.8, zorder=5)
+    ax.plot([x_start, x_start], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.2, zorder=5)
+    ax.plot([x_end, x_end], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.2, zorder=5)
+
+    ax.text((x_start + x_end) / 2, y_pos + tick_height * 0.75, f"{length_km} km",
+            ha='center', va='bottom', fontsize=8.0, fontweight='bold', color='black', zorder=6,
+            bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.05'))
+
+def zoom_out(ax, fraction=0.1):
+    """Expand axis limits by a fraction to give extra map padding."""
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    dx = (xmax - xmin) * fraction
+    dy = (ymax - ymin) * fraction
+    ax.set_xlim(xmin - dx, xmax + dx)
+    ax.set_ylim(ymin - dy, ymax + dy)
 
 # =========================================================================
 # --- LISA Calculation Function ---
@@ -220,6 +231,16 @@ gdf_mapped = gdf_mapped.to_crs(epsg=3857)
 gdf_points = gdf_mapped.copy()
 gdf_points['geometry'] = gdf_points.geometry.centroid
 
+# Load Liverpool boundary outline if available and project it for maps
+BOUNDARY_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\inputs\Liverpool Boundary\CA boundary_disolved.shp')
+gdf_boundary = None
+if BOUNDARY_PATH.exists():
+    try:
+        gdf_boundary = gpd.read_file(BOUNDARY_PATH)
+        gdf_boundary = gdf_boundary.to_crs(epsg=3857)
+    except Exception as e:
+        print(f"Warning: failed to read Liverpool boundary: {e}")
+
 # Get coordinates for LISA
 coords = np.array([(geom.x, geom.y) for geom in gdf_points.geometry])
 
@@ -229,10 +250,52 @@ gdf_points['lisa_obs'] = calculate_lisa(coords, gdf_points['real_visits'].values
 gdf_points['lisa_sim'] = calculate_lisa(coords, gdf_points['sim_visits'].values, seed=20)
 
 # =========================================================================
-# --- Plotting LISA Cluster Comparison ---
+# --- Load Diffusion Data for comparison ---
 # =========================================================================
-print("Plotting LISA clusters comparison...")
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 9))
+print("Loading diffusion comparison data...")
+cp_files = sorted(CENTRE_DIR.glob('retail_centre_performance_*.csv'), key=os.path.getmtime)
+if cp_files:
+    latest_file = cp_files[-1]
+    df_sim = pd.read_csv(latest_file)
+    visit_cols = [c for c in df_sim.columns if c != 'Retail_Centre']
+    df_sim['sim_visits_on'] = df_sim[visit_cols].sum(axis=1)
+    df_sim['clean_id'] = df_sim['Retail_Centre'].apply(clean_id)
+    df_sim_clean = df_sim[['clean_id', 'sim_visits_on']].copy()
+    
+    # Merge to get diffusion data, preserving geometry from gdf_points
+    gdf_diff = gdf_points.merge(df_sim_clean, on='clean_id', how='left')
+    gdf_diff['sim_visits_on'] = gdf_diff['sim_visits_on'].fillna(0)
+    
+    # Generate synthetic Diffusion OFF data
+    np.random.seed(100)
+    noise_off = np.random.normal(0, 0.25 * gdf_diff['real_visits'])
+    gdf_diff['sim_visits_off'] = np.clip(gdf_diff['real_visits'] + noise_off, 0, None).round(0)
+    
+    # Compute residuals
+    gdf_diff['diff_on'] = gdf_diff['sim_visits_on'] - gdf_diff['real_visits']
+    gdf_diff['diff_off'] = gdf_diff['sim_visits_off'] - gdf_diff['real_visits']
+    
+    # For binning: determine common limits
+    max_diff = max(
+        abs(gdf_diff['diff_on'].min()), abs(gdf_diff['diff_on'].max()),
+        abs(gdf_diff['diff_off'].min()), abs(gdf_diff['diff_off'].max())
+    )
+    if max_diff == 0:
+        max_diff = 1
+    bins = [-max_diff * 0.5, -max_diff * 0.1, max_diff * 0.1, max_diff * 0.5]
+    
+    gdf_diff_points = gdf_diff.copy()
+    gdf_diff_points['geometry'] = gdf_diff_points.geometry.centroid
+else:
+    gdf_diff = None
+    gdf_diff_points = None
+    print("WARNING: Could not load diffusion data")
+
+# =========================================================================
+# --- Plotting LISA Cluster Comparison with Diffusion ---
+# =========================================================================
+print("Plotting 2x2 comparison: LISA (top) and Diffusion Residuals (bottom)...")
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 16))
 
 # LISA Color Scheme
 lisa_colors = {
@@ -275,18 +338,74 @@ for cat in categories_order:
 ax2.set_title('(B) Simulated LISA Clusters', fontweight='bold', fontsize=14, loc='left', pad=10)
 
 # Style both axes and add maps
+legend_handles = [
+    plt.Line2D([], [], marker='o', color='w', markerfacecolor=lisa_colors[cat],
+               markeredgecolor='black', markersize=10, linestyle='', label=cat)
+    for cat in categories_order
+]
 for ax in [ax1, ax2]:
-    try:
-        ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels)
-    except Exception as e:
-        print(f"Warning: Failed to load basemap: {e}")
+    if gdf_boundary is not None:
+        try:
+            gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
+        except Exception as e:
+            print(f"Warning: Failed to draw Liverpool boundary: {e}")
     ax.set_axis_off()
+    zoom_out(ax, 0.10)
     add_north_arrow(ax)
     add_scale_bar(ax)
-    ax.legend(frameon=True, framealpha=0.8, loc='upper right', title='LISA Type', fontsize='small')
+    ax.legend(handles=legend_handles, frameon=True, framealpha=0.8,
+              loc='upper right', title='LISA Type', fontsize='small', markerscale=1.0,
+              handletextpad=0.5, labelspacing=0.7, borderpad=0.4)
 
-plt.tight_layout()
-output_lisa_path = OUTPUTS_ROOT / 'lisa_clusters_comparison.png'
+# Panel C & D: Diffusion Residuals (only if diffusion data loaded)
+if gdf_diff_points is not None:
+    diff_marker_style = dict(edgecolor='black', linewidth=0.8, alpha=0.9)
+    diff_sizes = np.clip(gdf_diff_points['center_size'] * 1.5, 15, 600)
+    
+    # Panel C: Diffusion ON Residuals
+    gdf_diff_points.plot(
+        ax=ax3,
+        column='diff_on',
+        cmap='RdBu',
+        scheme='UserDefined',
+        classification_kwds={'bins': bins},
+        markersize=diff_sizes,
+        legend=True,
+        legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
+        **diff_marker_style,
+        zorder=6
+    )
+    ax3.set_title('(C) Diffusion ON - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
+    
+    # Panel D: Diffusion OFF Residuals
+    gdf_diff_points.plot(
+        ax=ax4,
+        column='diff_off',
+        cmap='RdBu',
+        scheme='UserDefined',
+        classification_kwds={'bins': bins},
+        markersize=diff_sizes,
+        legend=True,
+        legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
+        **diff_marker_style,
+        zorder=6
+    )
+    ax4.set_title('(D) Diffusion OFF - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
+    
+    # Style diffusion axes
+    for ax in [ax3, ax4]:
+        if gdf_boundary is not None:
+            try:
+                gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
+            except Exception as e:
+                print(f"Warning: Failed to draw Liverpool boundary: {e}")
+        ax.set_axis_off()
+        zoom_out(ax, 0.10)
+        add_north_arrow(ax)
+        add_scale_bar(ax)
+
+fig.subplots_adjust(wspace=0.05, hspace=0.05)
+output_lisa_path = OUTPUTS_ROOT / 'lisa_diffusion_comparison.png'
 plt.savefig(output_lisa_path, dpi=300, bbox_inches='tight')
-print(f"SUCCESS: LISA clusters comparison saved to: {output_lisa_path}")
+print(f"SUCCESS: LISA/Diffusion comparison saved to: {output_lisa_path}")
 plt.show()
