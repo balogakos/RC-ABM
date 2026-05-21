@@ -16,8 +16,8 @@ from matplotlib.lines import Line2D
 # --- CONFIGURATION ---
 # =========================================================================
 # Toggle to use real validation data or synthetic comparison data
-USE_VALIDATION_DATA = False
-VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\processed\validation_visits.csv')
+USE_VALIDATION_DATA = True
+VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
 
 # Plot options: True to plot rank-transformed visits, False for raw visits
 PLOT_RANKED = False
@@ -455,107 +455,4 @@ plt.tight_layout()
 plt.savefig(corr_output, dpi=300, bbox_inches='tight')
 print(f"SUCCESS: Correlation plot saved to: {corr_output}")
 plt.close(fig_corr)
-# Draw correlation scatter plot using Seaborn
-sns.scatterplot(
-    data=df_plot,
-    x='x_plot',
-    y='y_plot',
-    hue='centre_typ',
-    size='center_size',
-    sizes=(40, 400),
-    palette=custom_palette,
-    alpha=0.85,
-    edgecolor='black',
-    linewidth=0.8,
-    ax=ax4
-)
-
-# Draw fitted regression line with 95% confidence interval
-sns.regplot(
-    data=df_plot,
-    x='x_plot',
-    y='y_plot',
-    scatter=False,
-    color='#e74c3c',
-    ax=ax4,
-    line_kws={'linestyle': '--', 'linewidth': 2.0, 'label': 'Fitted Regression'}
-)
-
-# Match styling to plot_results.py layout details
-ax4.set_title(f'(D) Correlation Performance{title_suffix}', fontweight='bold', fontsize=14, loc='left', pad=10)
-ax4.set_xlabel(x_label, fontweight='bold', fontsize=11)
-ax4.set_ylabel(y_label, fontweight='bold', fontsize=11)
-
-ax4.spines['top'].set_visible(False)
-ax4.spines['right'].set_visible(False)
-ax4.spines['left'].set_linewidth(1.2)
-ax4.spines['bottom'].set_linewidth(1.2)
-ax4.tick_params(width=1.2, labelsize=10)
-ax4.grid(False)
-
-# Combined size and regression legend (bottom-right)
-size_vals = df_plot['center_size'].dropna()
-if len(size_vals) == 0:
-    size_vals = pd.Series([100])
-minv, maxv = size_vals.min(), size_vals.max()
-# Use simple category bounds as requested
-rep_values = [10, 50, 100]
-
-# Map raw values to marker areas used by seaborn (sizes=(40,400))
-smin, smax = 40, 400
-def map_area_from_bounds(raw):
-    # clamp to min/max observed
-    r = max(minv, min(maxv, raw)) if maxv > minv else raw
-    if maxv == minv:
-        return (smin + smax) / 2.0
-    return smin + (r - minv) / (maxv - minv) * (smax - smin)
-
-handles_size = [ax4.scatter([], [], s=map_area_from_bounds(v), color='gray', edgecolor='black') for v in rep_values]
-labels_size = [f'{v}' for v in rep_values]
-
-# Get regression line handle
-reg_lines = [ln for ln in ax4.get_lines() if ln.get_label() == 'Fitted Regression']
-reg_handle = reg_lines[0] if len(reg_lines) > 0 else Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=2.0)
-
-# Combine both into a single legend in bottom-right corner
-combined_handles = handles_size + [reg_handle]
-combined_labels = labels_size + ['Fitted Regression']
-leg = ax4.legend(combined_handles, combined_labels, title='Centre size (POIs)', frameon=True, framealpha=0.95,
-                 loc='lower right', fontsize='medium')
-
-# Add textbox with performance metrics in the top left corner (no overlaps)
-stats_text = (
-    f"Pearson $r$: {r_val:.3f} (p: {r_pval:.2e})\n"
-    f"Spearman $\\rho$: {rho_val:.3f} (p: {rho_pval:.2e})\n"
-    f"RMSE: {rmse:.1f}\n"
-    f"MAE: {mae:.1f}\n"
-    f"Centres ($n$): {n_centres}"
-)
-ax4.text(
-    0.05, 0.95, stats_text,
-    transform=ax4.transAxes,
-    ha='left', va='top', fontsize=9.5, fontweight='bold',
-    bbox=dict(facecolor='white', alpha=0.8, edgecolor='#cccccc', boxstyle='round,pad=0.4')
-)
-
-# =========================================================================
-# --- 7. Save Output Figure ---
-# =========================================================================
-plt.tight_layout()
-
-# Save default mapping output file
-default_output = OUTPUTS_ROOT / 'retail_activity_mapping.png'
-plt.savefig(default_output, dpi=300, bbox_inches='tight')
-print(f"SUCCESS: Default map saved to: {default_output}")
-
-# Save mode-specific file
-if PLOT_RANKED:
-    mode_output = OUTPUTS_ROOT / 'retail_activity_mapping_ranked.png'
-else:
-    mode_output = OUTPUTS_ROOT / 'retail_activity_mapping_raw.png'
-
-plt.savefig(mode_output, dpi=300, bbox_inches='tight')
-print(f"SUCCESS: Mode-specific map saved to: {mode_output}")
-
-plt.show()
 

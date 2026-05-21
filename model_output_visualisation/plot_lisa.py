@@ -13,8 +13,8 @@ from pathlib import Path
 # --- CONFIGURATION ---
 # =========================================================================
 # Toggle to use real validation data or synthetic comparison data
-USE_VALIDATION_DATA = False
-VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\processed\validation_visits.csv')
+USE_VALIDATION_DATA = True
+VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
 
 # Import config from the simulation directory
 import sys
