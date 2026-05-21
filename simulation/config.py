@@ -135,3 +135,7 @@ SOCIAL_START_SIGMA     = 0.05    # Standard deviation of the initial random soci
 GEODEMOGRAPHIC_ENABLED = True
 DISTANCE_SENSITIVITY   = 1.0
 RETAIL_INTERVENTION    = 1.0
+
+# --- Temporal Variability ---
+# Controls the random daily fluctuation in trip probabilities (0.15 = +/- 15%)
+PROBABILITY_VARIANCE   = 0.15

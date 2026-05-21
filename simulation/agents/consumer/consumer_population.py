@@ -94,8 +94,21 @@ class ConsumerPopulation:
             self.attributes['Geo_Subcluster']      = 'none'
             self.attributes['Cluster_Blend_Weight'] = 0.0
         
-        # Starting stock randomized between 0 and Capacity
-        self.state_df['Stock'] = np.random.uniform(0, self.state_df['Capacity'])
+        # --- Smooth Start Initialization ---
+        # Instead of U(0, Capacity), we distribute agents across their shopping cycle.
+        # This prevents the "Day 1 Spike" where everyone shops at once.
+        # logic: Stock = Threshold + (Cycle_Progress * Consumption_Rate)
+        # where Cycle_Progress is U(0, Cycle_Length)
+        
+        cycle_length = (self.state_df['Capacity'] - self.state_df['Shopping_Threshold']) / self.state_df['Consumption_Rate']
+        cycle_progress = np.random.uniform(0, cycle_length, num_agents)
+        
+        # Some agents start "Pre-depleted" to ensure Day 1 still has some activity
+        # We allow 10% of agents to start below threshold to simulate a normal day
+        start_offset = np.random.uniform(-0.1, 1.0, num_agents) * cycle_length
+        
+        self.state_df['Stock'] = self.state_df['Shopping_Threshold'] + (start_offset * self.state_df['Consumption_Rate'])
+        self.state_df['Stock'] = self.state_df['Stock'].clip(0, self.state_df['Capacity'])
 
     def consume(self):
         """Daily stock reduction."""
@@ -109,9 +122,9 @@ class ConsumerPopulation:
         """Chooses between online, bulk, and convenience."""
         return shopping_logic.choose_mode(self.attributes, shopping_mask)
 
-    def trigger_nts_trips(self):
-        """Triggers non-grocery trips based on daily probabilities."""
-        return shopping_logic.trigger_trips(self.attributes)
+    def trigger_nts_trips(self, multiplier=1.0):
+        """Triggers non-grocery trips based on daily probabilities with optional variation."""
+        return shopping_logic.trigger_trips(self.attributes, multiplier=multiplier)
 
     def choose_destinations(self, mask, grocery_mode_series, utility_matrices, amenity_binary):
         """Selects destination and mode for grocery trips."""

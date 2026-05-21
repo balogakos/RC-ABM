@@ -31,10 +31,10 @@ def choose_mode(attributes_df, shopping_mask):
     modes.update(chosen)
     return modes
 
-def trigger_trips(attributes_df):
+def trigger_trips(attributes_df, multiplier=1.0):
     """
     For each NTS trip type, draws a random number per agent against its daily
-    probability.
+    probability (multiplied by a global daily pulse).
     """
     triggered = {}
     rand_matrix = np.random.random((len(attributes_df), len(TRIP_TYPE_CONFIG)))
@@ -44,7 +44,11 @@ def trigger_trips(attributes_df):
         if prob_col:
             probs = attributes_df[prob_col].values if prob_col in attributes_df.columns \
                     else np.zeros(len(attributes_df))
-            triggered[trip_type] = pd.Series(rand_matrix[:, i] < probs,
+            
+            # Apply temporal variability
+            effective_probs = np.clip(probs * multiplier, 0, 1)
+            
+            triggered[trip_type] = pd.Series(rand_matrix[:, i] < effective_probs,
                                              index=attributes_df.index)
         else:
             # grocery is handled by stock logic

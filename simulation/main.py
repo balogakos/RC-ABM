@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 # Fix ModuleNotFoundError: Ensure the project root is in sys.path
-# This allows 'import simulation.core' to work when running main.py directly
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -23,82 +22,12 @@ from simulation.core.simulation_engine import SimulationEngine
 from simulation.core.constants import TRANSPORT_MODES
 import visualization
 
-# --- Configuration ---
-# All agents now use pre-assigned Geo_Subcluster labels from processed data
-
 def _clean_rc_id(x):
     try:
         s = str(x)
         return s[:-2] if s.endswith('.0') else s
     except Exception:
         return str(x)
-
-def _preprocess_transport_times(df):
-    if df is None or (hasattr(df, 'empty') and df.empty):
-        return {}
-    tt_lookup = {}
-    for col, mode in [('Walk', 'walk'), ('Drive', 'drive'), ('PT', 'pt')]:
-        if col not in df.columns:
-            continue
-        d = {}
-        for postcode, val in df[col].items():
-            if isinstance(val, dict):
-                d[postcode] = {_clean_rc_id(k): float(v) for k, v in val.items()}
-            elif val is not None:
-                try:
-                    d[postcode] = float(val)
-                except Exception:
-                    pass
-        tt_lookup[mode] = d
-    return tt_lookup
-
-def _split_matrices(df, household_col='household'):
-    transport_suffixes = ['_walk', '_drive', '_pt']
-    mode_cols = {suf.lstrip('_'): [] for suf in transport_suffixes}
-    meta_cols = []
-
-    for col in df.columns:
-        matched = False
-        for suf in transport_suffixes:
-            if col.endswith(suf):
-                prefix = col[:-len(suf)]
-                try:
-                    float(prefix)
-                    mode_cols[suf.lstrip('_')].append(col)
-                    matched = True
-                    break
-                except (ValueError, TypeError):
-                    pass
-        
-        if not matched:
-            try:
-                float(col)
-                mode_cols['drive'].append(col)
-                matched = True
-            except (ValueError, TypeError):
-                pass
-                
-        if not matched:
-            meta_cols.append(col)
-
-    meta_df = df[meta_cols].copy()
-    mode_dfs = {}
-    for mode, cols in mode_cols.items():
-        if not cols:
-            continue
-        mat = df[cols].astype(np.float32)
-        def _strip(c):
-            for s in transport_suffixes:
-                if c.endswith(s):
-                    c = c[:-len(s)]
-                    break
-            return c[:-2] if c.endswith('.0') else c
-        mat.columns = [_strip(c) for c in mat.columns]
-        if household_col in df.columns:
-            mat.index = df[household_col]
-        mode_dfs[mode] = mat.fillna(0)
-
-    return meta_df, mode_dfs
 
 class RetailABMApp:
     def __init__(self, root):
@@ -132,10 +61,7 @@ class RetailABMApp:
         self.root.update()
 
     def load_data(self, n_agents=None):
-        """Unified data loader for the Tkinter GUI using trip-specific files."""
-        # Use config to find the right directory
         base_utility_dir = config.UTILITY_DIR
-            
         self.log("Loading 6 trip-specific datasets...")
         
         utility_matrices = {}
@@ -147,34 +73,40 @@ class RetailABMApp:
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
             
-            # Memory-efficient batch loading to handle large datasets gracefully
             if n_agents:
                 _pf = pq.ParquetFile(file_path)
                 df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
+                df = df.iloc[:n_agents]
             else:
                 df = pd.read_parquet(file_path)
+            
+            utility_cols = [c for c in df.columns if any(c.endswith(s) for s in ['_walk', '_drive', '_pt'])]
+            if utility_cols:
+                df[utility_cols] = df[utility_cols].astype(np.float16)
                 
-            # Extract matrices for each mode
             suffixes = ['_walk', '_drive', '_pt']
             for suf in suffixes:
                 mode = suf.lstrip('_')
                 cols = [c for c in df.columns if c.endswith(suf)]
                 if not cols: continue
                 
-                mat = df[cols].astype(np.float16)
+                mat = df[cols]
                 mat.columns = [_clean_rc_id(c[:-len(suf)]) for c in mat.columns]
-                
-                # Standardize index to string to avoid mixed-type duplication and row expansion
                 mat.index = df['household'].astype(str)
                 if not mat.index.is_unique:
                     mat = mat[~mat.index.duplicated(keep='first')]
-                    
-                utility_matrices[f'{trip_type}_{mode}'] = mat.fillna(0)
+                utility_matrices[f'{trip_type}_{mode}'] = mat.fillna(0).astype(np.float16)
 
-            # The bulk dataset acts as our primary demographic source
             if trip_type == 'bulk':
                 meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
                 consumers = df[meta_cols].copy()
+                
+                # CRITICAL FIX: Pre-normalize grocery mode probabilities
+                grocery_prob_cols = ['prob_online', 'prob_bulk', 'prob_convenience']
+                if all(c in consumers.columns for c in grocery_prob_cols):
+                    row_sums = consumers[grocery_prob_cols].sum(axis=1).replace(0, 1.0)
+                    consumers[grocery_prob_cols] = consumers[grocery_prob_cols].div(row_sums, axis=0)
+
                 consumers['household'] = consumers['household'].astype(str)
                 if not consumers['household'].is_unique:
                     consumers = consumers.drop_duplicates(subset='household', keep='first')
@@ -205,50 +137,42 @@ class RetailABMApp:
             days = int(self.days_var.get())
             eval_freq = int(self.eval_freq_var.get())
 
-            # Refresh data to ensure no stale/duplicated data exists in the current session
             self.log(f"Initializing simulation for {num_agents_req} agents...")
             raw = self.load_data(n_agents=num_agents_req)
             self._base_data = raw
-            self._loaded_n = num_agents_req
 
             consumers, base_matrices, amenity_binary, tt_lookup = self._base_data
+            utility_matrices = {k: v.copy() for k, v in base_matrices.items()}
             
-            # Defensive copy and final check for unique indices
-            utility_matrices = {}
-            for k, v in base_matrices.items():
-                if not v.index.is_unique:
-                    utility_matrices[k] = v[~v.index.duplicated(keep='first')].copy()
-                else:
-                    utility_matrices[k] = v.copy()
-
-            # Thresholding
-            THRESHOLD = 0.1
+            THRESHOLD = np.float16(0.1)
             for mat in utility_matrices.values():
-                mat[mat < THRESHOLD] = 0.0
+                # Perform thresholding in-place on the underlying numpy array to prevent upcasting
+                arr = mat.values
+                arr[arr < THRESHOLD] = np.float16(0.0)
 
-            # Run Engine
             engine = SimulationEngine(consumers, utility_matrices, amenity_binary, tt_lookup)
-            all_visits = engine.run(num_agents_req, days, eval_freq, log_callback=self.log)
+            summary_files = engine.run(num_agents_req, days, eval_freq, log_callback=self.log)
 
-            # Results
-            if all_visits:
-                self.log("Saving results...")
-                paths.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                
-                # Correctly load the temporary parquet files
-                dfs = [pd.read_parquet(f) for f in all_visits]
-                total_visits_df = pd.concat(dfs, ignore_index=True)
-                
-                output_path = paths.OUTPUT_DIR / f"visits_log_{int(time.time())}.parquet"
-                total_visits_df.to_parquet(output_path)
-
-                map_path = visualization.plot_visitation_map(str(output_path))
-                messagebox.showinfo("Success", f"Simulation complete!\n{len(total_visits_df):,} visits saved.")
+            if summary_files and len(summary_files) >= 2:
+                daily_csv, centre_csv = summary_files[:2]
+                self.log("Simulation complete!")
+                msg = f"Simulation finished successfully.\n\n" \
+                      f"Daily Summary: {os.path.basename(daily_csv)}\n" \
+                      f"Centre Performance: {os.path.basename(centre_csv)}"
+                if len(summary_files) == 3:
+                    convergence_csv = summary_files[2]
+                    msg += f"\nUtility Convergence & Distributions: {os.path.basename(convergence_csv)}"
+                elif len(summary_files) == 4:
+                    convergence_csv, distribution_csv = summary_files[2:4]
+                    msg += f"\nUtility Convergence: {os.path.basename(convergence_csv)}" \
+                           f"\nUtility Distributions: {os.path.basename(distribution_csv)}"
+                messagebox.showinfo("Success", msg)
             else:
-                messagebox.showwarning("Info", "No visits occurred.")
+                messagebox.showwarning("Info", "No visits occurred or summaries failed.")
 
         except Exception as e:
             import traceback
+            self.log(f"Error: {e}")
             messagebox.showerror("Error", f"{e}\n\n{traceback.format_exc()}")
 
 def main():

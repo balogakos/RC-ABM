@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from simulation.core.constants import TRANSPORT_MODES, GROCERY_MODES, TRIP_TYPE_CONFIG
 from simulation.core.utility_engine import (
     apply_choice_modifiers, 
@@ -34,14 +35,14 @@ def choose_destination(state_df, consumers_mask, grocery_mode_series,
             if mat is None or mat.empty:
                 continue
                 
-            relevant = mat.reindex(agent_ids).fillna(0).copy()
+            relevant = mat.reindex(agent_ids).fillna(0).astype(np.float16)
             relevant = apply_choice_modifiers(
                 relevant, state_df, shoppers_idx, has_postcode=True)
             
             if filter_col in amenity_binary:
                 binary_vec = amenity_binary[filter_col].reindex(
-                    relevant.columns, fill_value=0)
-                relevant = relevant.mul(binary_vec.values, axis=1)
+                    relevant.columns, fill_value=0).values.astype(np.float16)
+                relevant = pd.DataFrame(relevant.values * binary_vec, index=relevant.index, columns=relevant.columns)
                 
             aligned[tmode] = relevant
 
@@ -85,12 +86,13 @@ def choose_destination_for_trip(trip_type, triggered_mask, attributes_df,
                     or_mask = or_mask.combine(
                         vec,
                         lambda a, b: 1.0 if (a == 1.0 or b == 1.0) else 0.0)
-            return mat.mul(or_mask.values, axis=1)
+            mask_vals = or_mask.values.astype(np.float16)
+            return pd.DataFrame(mat.values * mask_vals, index=mat.index, columns=mat.columns)
         else:
             if filter_col in amenity_binary:
                 binary_vec = amenity_binary[filter_col].reindex(
-                    mat.columns, fill_value=0)
-                return mat.mul(binary_vec.values, axis=1)
+                    mat.columns, fill_value=0).values.astype(np.float16)
+                return pd.DataFrame(mat.values * binary_vec, index=mat.index, columns=mat.columns)
         return mat
 
     aligned = {}
@@ -98,7 +100,7 @@ def choose_destination_for_trip(trip_type, triggered_mask, attributes_df,
         mat = utility_matrices.get(f'{util_prefix}_{tmode}')
         if mat is None or mat.empty:
             continue
-        relevant = mat.reindex(agent_ids).fillna(0).copy()
+        relevant = mat.reindex(agent_ids).fillna(0).astype(np.float16)
         relevant = apply_choice_modifiers(
             relevant, attributes_df, shoppers_idx, has_postcode=True)
         relevant = _apply_amenity_filter(relevant)
@@ -155,11 +157,11 @@ def choose_chained_destination(trip_list, shoppers_idx, grocery_modes,
             if mat is None or mat.empty:
                 continue
                 
-            rel = mat.reindex(agent_ids).fillna(0).copy()
+            rel = mat.reindex(agent_ids).fillna(0).astype(np.float16)
             if composite_utility is None:
                 composite_utility = rel
             else:
-                composite_utility += rel
+                composite_utility = composite_utility + rel
             
             fcol = meta['filter']
             mask = pd.Series(1.0, index=rel.columns)
@@ -179,11 +181,12 @@ def choose_chained_destination(trip_list, shoppers_idx, grocery_modes,
                 joint_amenity_mask = joint_amenity_mask.combine(mask, lambda a, b: 1.0 if (a == 1.0 and b == 1.0) else 0.0)
 
         if composite_utility is not None:
-            composite_utility /= len(trip_metas)
+            composite_utility = (composite_utility / len(trip_metas)).astype(np.float16)
             composite_utility = apply_choice_modifiers(
                 composite_utility, attributes_df, shoppers_idx, has_postcode=True)
             if joint_amenity_mask is not None:
-                composite_utility = composite_utility.mul(joint_amenity_mask.values, axis=1)
+                mask_vals = joint_amenity_mask.values.astype(np.float16)
+                composite_utility = pd.DataFrame(composite_utility.values * mask_vals, index=composite_utility.index, columns=composite_utility.columns)
             aligned[tmode] = composite_utility
 
     dests, modes, scores = joint_mode_destination_choice(aligned, shoppers_idx)

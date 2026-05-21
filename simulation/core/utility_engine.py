@@ -15,7 +15,8 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
     intervention_mult = getattr(config, 'RETAIL_INTERVENTION', 1.0)
     if intervention_mult != 1.0 and not relevant_utils.empty:
         top_center = relevant_utils.sum(axis=0).idxmax()
-        relevant_utils[top_center] *= intervention_mult
+        # Cast to np.float16 to prevent upcasting of the column
+        relevant_utils[top_center] *= np.float16(intervention_mult)
 
     # --- MODIFIED: Daily Neighbourhood Conformity is now handled by the 
     # periodic additive mechanism in spatial_diffusion.py to speed up daily steps.
@@ -23,8 +24,10 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
     # Distance Sensitivity (beta scale)
     dist_sens = getattr(config, 'DISTANCE_SENSITIVITY', 1.0)
     if dist_sens != 1.0:
-        mask = relevant_utils > 0
-        relevant_utils[mask] = relevant_utils[mask] ** dist_sens
+        # Perform in-place on the numpy array to prevent pandas upcasting to float64
+        vals = relevant_utils.values
+        mask = vals > 0
+        vals[mask] = vals[mask] ** np.float16(dist_sens)
 
     return relevant_utils
 
@@ -46,10 +49,10 @@ def sample_destinations(relevant_utils, shoppers_idx):
     # Use float16 for massive memory savings in intermediate arrays
     arr  = valid_utils.values.astype(np.float16)
 
-    scaled = beta * arr
+    scaled = np.float16(beta) * arr
     mask = (arr <= 0)
     # Use a safe minimum for float16 (-1e4 is usually enough for softmax)
-    scaled[mask] = -10000.0 
+    scaled[mask] = np.float16(-10000.0) 
     
     # Subtract max for numerical stability
     row_max = scaled.max(axis=1, keepdims=True)
@@ -114,10 +117,10 @@ def joint_mode_destination_choice(aligned_mode_utils, shoppers_idx):
     beta   = getattr(config, 'SOFTMAX_BETA', 5.0)
     # Memory optimization: Use float16 for the massive stacked array
     valid_stacked = valid_stacked.astype(np.float16)
-    scaled = (beta * valid_stacked)
+    scaled = (np.float16(beta) * valid_stacked)
     
     mask = (valid_stacked <= 0)
-    scaled[mask] = -10000.0
+    scaled[mask] = np.float16(-10000.0)
     
     # Numerical stability: Subtract max
     row_max = scaled.max(axis=1, keepdims=True)

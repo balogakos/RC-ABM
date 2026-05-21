@@ -13,6 +13,11 @@ data_local/
 *.gpkg
 *.csv
 *.xlsx
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
 
 # Image outputs
 *.png
