@@ -78,12 +78,24 @@ colormap = plt.cm.tab20
 colors = [colormap(i) for i in np.linspace(0, 0.95, num_to_select)]
 
 # Plot Panel A: Attractiveness Utility Evolution
+# 1. Background paths for all other centres (highly transparent)
+for col in centre_cols:
+    if col not in top_centres:
+        ax1.plot(df['Day'], df[col], color='#cbd5e1', linewidth=0.6, alpha=0.25, zorder=1)
+
+# 2. Highlighted foreground paths for top centres
 for idx, centre in enumerate(top_centres):
-    ax1.plot(df['Day'], df[centre], label=f"Centre {centre}", color=colors[idx], linewidth=2.0, alpha=0.85)
+    ax1.plot(df['Day'], df[centre], label=f"Centre {centre}", color=colors[idx], linewidth=2.0, alpha=0.9, zorder=3)
 
 # Plot Panel B: Relative Hierarchy Rank Position
+# 1. Background paths for all other centres (highly transparent)
+for col in centre_cols:
+    if col not in top_centres:
+        ax2.plot(df['Day'], df_ranks[col], color='#cbd5e1', linewidth=0.6, alpha=0.25, zorder=1)
+
+# 2. Highlighted foreground paths for top centres
 for idx, centre in enumerate(top_centres):
-    ax2.plot(df['Day'], df_ranks[centre], label=f"Centre {centre}", color=colors[idx], linewidth=2.0, alpha=0.85)
+    ax2.plot(df['Day'], df_ranks[centre], label=f"Centre {centre}", color=colors[idx], linewidth=2.0, alpha=0.9, zorder=3)
 
 # Invert Y-axis for ranks (Rank 1 at the top)
 ax2.invert_yaxis()
