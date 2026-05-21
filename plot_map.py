@@ -122,6 +122,16 @@ gdf_mapped = gdf_mapped.to_crs(epsg=3857)
 gdf_points = gdf_mapped.copy()
 gdf_points['geometry'] = gdf_points.geometry.centroid
 
+# Load Liverpool boundary (optional) and project to Web Mercator
+BOUNDARY_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\inputs\Liverpool Boundary\CA boundary_disolved.shp')
+gdf_boundary = None
+if BOUNDARY_PATH.exists():
+    try:
+        gdf_boundary = gpd.read_file(BOUNDARY_PATH)
+        gdf_boundary = gdf_boundary.to_crs(epsg=3857)
+    except Exception as e:
+        print(f"Warning: failed to read Liverpool boundary: {e}")
+
 # =========================================================================
 # --- 4. Helper Functions for Map Elements ---
 # =========================================================================
@@ -201,7 +211,8 @@ sc1 = gdf_points.plot(
     markersize=sizes, 
     legend=True,
     legend_kwds={'loc': 'upper right', 'title': 'Simulated Visits', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style
+    **marker_style,
+    zorder=6
 )
 ax1.set_title('(A) Simulated Activity', fontweight='bold', fontsize=14, loc='left', pad=10)
 
@@ -215,7 +226,8 @@ sc2 = gdf_points.plot(
     markersize=sizes, 
     legend=True,
     legend_kwds={'loc': 'upper right', 'title': 'Baseline Visits', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style
+    **marker_style,
+    zorder=6
 )
 ax2.set_title('(B) Real-World Baseline', fontweight='bold', fontsize=14, loc='left', pad=10)
 
@@ -234,7 +246,8 @@ sc3 = gdf_points.plot(
     markersize=sizes, 
     legend=True,
     legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style
+    **marker_style,
+    zorder=6
 )
 ax3.set_title('(C) Simulation Residuals (Sim - Real)', fontweight='bold', fontsize=14, loc='left', pad=10)
 
@@ -244,10 +257,16 @@ for ax in [ax1, ax2, ax3]:
         ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels)
     except Exception as e:
         print(f"Warning: Failed to load basemap: {e}. Plotting map geometry without background.")
+    # Draw Liverpool administrative boundary (if available) under the points
+    if gdf_boundary is not None:
+        try:
+            gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
+        except Exception as e:
+            print(f"Warning: Failed to draw Liverpool boundary: {e}")
     ax.set_axis_off()
-    # Add map elements: North arrow and Scale bar (bottom-right)
+    # Add map elements: North arrow and Scale bar (moved further into corner)
     add_north_arrow(ax)
-    add_scale_bar(ax, position=(0.94, 0.06))
+    add_scale_bar(ax, position=(0.98, 0.03))
 
 # =========================================================================
 # --- 6. Correlation Performance Plot (Panel D) ---
@@ -328,36 +347,35 @@ ax4.spines['bottom'].set_linewidth(1.2)
 ax4.tick_params(width=1.2, labelsize=10)
 ax4.grid(False)
 
-# Build separate legends: one for category (hue) and one for marker size (center_size)
-# Category legend (colour blocks)
-categories = list(df_plot['centre_typ'].unique())
-handles_cat = [Line2D([0], [0], marker='o', color='w', markerfacecolor=custom_palette.get(cat, '#7f8c8d'),
-                       markeredgecolor='black', markersize=8, linestyle='') for cat in categories]
-labels_cat = [cat for cat in categories]
-leg1 = ax4.legend(handles_cat, labels_cat, title='Type', frameon=True, framealpha=0.9,
-                  loc='lower right', fontsize='small')
-ax4.add_artist(leg1)
-
-# Size legend: pick representative raw centre_size values (min, median, max)
+# Build a single size legend (bottom-left) with simple representative bounds
 size_vals = df_plot['center_size'].dropna()
 if len(size_vals) == 0:
     size_vals = pd.Series([100])
 minv, maxv = size_vals.min(), size_vals.max()
-midv = int(size_vals.median())
-rep_values = [int(minv), int(midv), int(maxv)]
+# Use simple category bounds as requested
+rep_values = [10, 50, 100]
 
 # Map raw values to marker areas used by seaborn (sizes=(40,400))
 smin, smax = 40, 400
-def map_area(val):
+def map_area_from_bounds(raw):
+    # clamp to min/max observed
+    r = max(minv, min(maxv, raw)) if maxv > minv else raw
     if maxv == minv:
         return (smin + smax) / 2.0
-    return smin + (val - minv) / (maxv - minv) * (smax - smin)
+    return smin + (r - minv) / (maxv - minv) * (smax - smin)
 
-handles_size = [ax4.scatter([], [], s=map_area(v), color='gray', edgecolor='black') for v in rep_values]
+handles_size = [ax4.scatter([], [], s=map_area_from_bounds(v), color='gray', edgecolor='black') for v in rep_values]
 labels_size = [f'{v}' for v in rep_values]
-leg2 = ax4.legend(handles_size, labels_size, title='Centre size (POIs)', frameon=True, framealpha=0.9,
-                  loc='upper right', fontsize='small')
-ax4.add_artist(leg2)
+leg = ax4.legend(handles_size, labels_size, title='Centre size (POIs)', frameon=True, framealpha=0.95,
+                 loc='lower left', fontsize='medium')
+ax4.add_artist(leg)
+
+# Add legend for the fitted regression line in the bottom-right
+reg_lines = [ln for ln in ax4.get_lines() if ln.get_label() == 'Fitted Regression']
+if len(reg_lines) > 0:
+    reg_handle = reg_lines[0]
+    leg_reg = ax4.legend([reg_handle], ['Fitted Regression'], loc='lower right', frameon=True, framealpha=0.95, fontsize='small')
+    ax4.add_artist(leg_reg)
 
 # Add textbox with performance metrics in the top left corner (no overlaps)
 stats_text = (
