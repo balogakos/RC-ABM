@@ -71,7 +71,7 @@ print(f"Selected top {num_to_select} retail centres on final day: {top_centres}"
 # =========================================================================
 # --- 3. Plotting ---
 # =========================================================================
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7.5))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
 # Generate high-contrast, distinct color palette for the tracked paths
 colormap = plt.cm.tab20
@@ -98,19 +98,17 @@ for day in eval_days:
     ax2.axvline(x=day, color='#e74c3c', linestyle='--', linewidth=1.2, alpha=0.5)
 
 # Create custom dummy legend entry for the evaluation strikes
-strike_handle = Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=1.2, alpha=0.7, label='Evaluation Strike (10-Day Cycle)')
+strike_handle = Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=1.2, alpha=0.7, label='Evaluation Strike')
 
 # Setup Panel A styling
-ax1.set_title("Panel A: Attractiveness Utility Evolution ($U_t$)", fontweight='bold', fontsize=12, pad=12, loc='left')
-ax1.set_xlabel("Simulation Day", fontweight='bold', fontsize=11)
-ax1.set_ylabel("Attractiveness Utility", fontweight='bold', fontsize=11)
-ax1.set_xlim(df['Day'].min() - 2, max_day + 2)
+ax1.set_title("Attractiveness Utility Evolution ($U_t$)", fontweight='bold', loc='left', pad=10)
+ax1.set_xlabel("Day")
+ax1.set_ylabel("Attractiveness Utility")
 
 # Setup Panel B styling
-ax2.set_title("Panel B: Relative Hierarchy Rank Position", fontweight='bold', fontsize=12, pad=12, loc='left')
-ax2.set_xlabel("Simulation Day", fontweight='bold', fontsize=11)
-ax2.set_ylabel("Relative Rank Position (Rank 1 is Top)", fontweight='bold', fontsize=11)
-ax2.set_xlim(df['Day'].min() - 2, max_day + 2)
+ax2.set_title("Relative Hierarchy Rank Position", fontweight='bold', loc='left', pad=10)
+ax2.set_xlabel("Day")
+ax2.set_ylabel("Relative Rank Position")
 
 # Global plot adjustments (Spines, Grids)
 for ax in [ax1, ax2]:
@@ -118,31 +116,18 @@ for ax in [ax1, ax2]:
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_linewidth(1.2)
     ax.spines['bottom'].set_linewidth(1.2)
-    ax.tick_params(width=1.2, labelsize=10)
+    ax.tick_params(width=1.2)
     ax.grid(False)
 
 # Add legends with the evaluation strike included
 handles1, labels1 = ax1.get_legend_handles_labels()
 handles1.append(strike_handle)
-ax1.legend(handles=handles1, loc='upper right', frameon=True, framealpha=0.9, edgecolor='#e2e8f0', fontsize=9, ncol=2)
+ax1.legend(handles=handles1, frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
 
 handles2, labels2 = ax2.get_legend_handles_labels()
 handles2.append(strike_handle)
-ax2.legend(handles=handles2, loc='upper right', frameon=True, framealpha=0.9, edgecolor='#e2e8f0', fontsize=9, ncol=2)
+ax2.legend(handles=handles2, frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
 
-# Add informational text box on Panel A explaining the adaptive cycle mechanism
-textbox_style = dict(boxstyle='round,pad=0.6', facecolor='#f8fafc', edgecolor='#cbd5e1', alpha=0.95, linewidth=0.8)
-info_text = (
-    "Adaptive Performance Cycle:\n"
-    f"• Evaluation Strikes: Occur every {EVAL_FREQ} days (dashed red lines).\n"
-    "• Attractiveness Boosts: Underperforming centres receive a utility\n"
-    "  boost (up to +30%) to prevent lock-in and encourage recovery.\n"
-    "• Social Diffusion: Social influence is updated at each cycle\n"
-    "  to spread consumer preference updates through the social network."
-)
-ax1.text(0.04, 0.05, info_text, transform=ax1.transAxes, fontsize=9.5, verticalalignment='bottom', bbox=textbox_style, color='#334155')
-
-plt.suptitle("Ecosystem Dynamics: Tracking Retail Centre Evolution & Adaptive Evaluation Cycles", fontweight='bold', fontsize=14, y=0.98)
 plt.tight_layout()
 
 # Save final visualization
