@@ -68,15 +68,27 @@ class RetailABMApp:
         consumers = None
         trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
             
+        sampled_households = None
+        if n_agents:
+            first_file = os.path.join(base_utility_dir, f'utility_scores_{trip_types[0]}.parquet')
+            if not os.path.exists(first_file):
+                raise FileNotFoundError(f"Required utility dataset missing: {first_file}")
+            self.log("Identifying unique households for random sampling...")
+            all_households = pd.read_parquet(first_file, columns=['household'])['household'].unique()
+            if n_agents < len(all_households):
+                np.random.seed(42)  # Use a fixed seed for reproducible random selection
+                sampled_households = np.random.choice(all_households, size=n_agents, replace=False).tolist()
+                self.log(f"Randomly selected {n_agents} households out of {len(all_households)}.")
+            else:
+                self.log(f"Requested agents {n_agents} is >= total unique households {len(all_households)}. Loading all agents.")
+
         for trip_type in trip_types:
             file_path = os.path.join(base_utility_dir, f'utility_scores_{trip_type}.parquet')
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
             
-            if n_agents:
-                _pf = pq.ParquetFile(file_path)
-                df = next(_pf.iter_batches(batch_size=n_agents)).to_pandas()
-                df = df.iloc[:n_agents]
+            if sampled_households is not None:
+                df = pd.read_parquet(file_path, filters=[('household', 'in', sampled_households)])
             else:
                 df = pd.read_parquet(file_path)
             
