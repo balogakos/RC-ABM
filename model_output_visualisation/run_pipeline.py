@@ -139,8 +139,11 @@ for script_name, description in plotting_scripts:
     script_path = VISUALISATION_DIR / script_name
     print(f"--- Running {description} ({script_name}) ---")
     try:
+        # Force non-interactive Agg backend to avoid hanging on plt.show()
+        env = os.environ.copy()
+        env['MPLBACKEND'] = 'Agg'
         # Run subprocess using same python executable
-        result = subprocess.run([sys.executable, str(script_path)], check=True, capture_output=True, text=True)
+        result = subprocess.run([sys.executable, str(script_path)], check=True, capture_output=True, text=True, env=env)
         print(f"Stdout:\n{result.stdout.strip()}")
         if result.stderr:
             print(f"Stderr:\n{result.stderr.strip()}")
