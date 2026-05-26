@@ -12,7 +12,7 @@ from pathlib import Path
 # 'latest'  : Plots only the single most recent simulation run (no SD shading, clean lines).
 # 'average' : Plots the average of all runs found in the subfolders.
 #             If > 1 run is found, standard deviations are shown as shaded alpha backgrounds.
-PLOT_MODE = 'latest'  
+PLOT_MODE = 'average'  
 
 # Root paths for outputs (updated subdirectory structure)
 OUTPUTS_ROOT = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\outputs')
