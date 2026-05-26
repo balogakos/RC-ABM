@@ -6,11 +6,14 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+import datetime
+
 # Set up paths relative to this script
 VISUALISATION_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = VISUALISATION_DIR.parent
 OUTPUTS_ROOT = PROJECT_ROOT / 'outputs'
-REPORTS_DIR = OUTPUTS_ROOT / 'reports'
+timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+REPORTS_DIR = OUTPUTS_ROOT / f'reports_{timestamp}'
 SYNTHETIC_DIR = VISUALISATION_DIR / 'synthetic_data'
 
 # Ensure directories exist
@@ -132,7 +135,8 @@ plotting_scripts = [
     ('plot_map.py', "3. Spatial Activity Maps & Correlation"),
     ('plot_lisa.py', "4. LISA Cluster Comparison"),
     ('plot_diffusion_comparison.py', "5. Behavioral Diffusion ON/OFF comparison"),
-    ('plot_adaptive_cycle.py', "6. Adaptive Performance Cycle Tracking")
+    ('plot_adaptive_cycle.py', "6. Adaptive Performance Cycle Tracking"),
+    ('plot_boosts.py', "7. Attractiveness Trajectories of Affected & Boosted Centres")
 ]
 
 for script_name, description in plotting_scripts:
@@ -167,16 +171,24 @@ output_mappings = [
     ('retail_activity_correlation.png', '04_retail_activity_correlation.png'),
     ('lisa_diffusion_comparison.png', '05_lisa_diffusion_comparison.png'),
     ('diffusion_accuracy_comparison.png', '06_diffusion_accuracy_comparison.png'),
-    ('adaptive_performance_cycle.png', '07_adaptive_performance_cycle.png')
+    ('adaptive_performance_cycle.png', '07_adaptive_performance_cycle.png'),
+    ('09_boosted_centres_trajectories.png', '09_boosted_centres_trajectories.png')
 ]
 
 for src_name, dest_name in output_mappings:
     src_path = OUTPUTS_ROOT / src_name
+    
+    # Handle both average and latest modes for the convergence chart
+    if src_name == 'stability_metrics_visualization_latest.png':
+        avg_path = OUTPUTS_ROOT / 'stability_metrics_visualization_average.png'
+        if avg_path.exists():
+            src_path = avg_path
+        
     dest_path = REPORTS_DIR / dest_name
     
     if src_path.exists():
         shutil.copy2(src_path, dest_path)
-        print(f"Copied & Renamed: {src_name} -> reports/{dest_name}")
+        print(f"Copied & Renamed: {src_path.name} -> reports/{dest_name}")
     else:
         print(f"Warning: Expected output file {src_path} was not found.")
 
