@@ -286,8 +286,9 @@ class SimulationEngine:
                     for msg in messages: log(msg)
                     self.eval_period_visits.clear()
 
-                    diffusion_msgs = self.population.apply_social_influence(day_df, self.utility_matrices, self.base_utilities)
-                    for msg in diffusion_msgs: log(msg)
+                # D. Daily Social Influence Diffusion
+                diffusion_msgs = self.population.apply_social_influence(day_df, self.utility_matrices, self.base_utilities)
+                for msg in diffusion_msgs: log(msg)
 
                 # Accumulate/save raw outputs based on mode
                 if output_mode == "parquet_paths":
