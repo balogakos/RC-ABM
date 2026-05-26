@@ -44,10 +44,20 @@ class SimulationEngine:
         self.prev_r_daily = None
 
 
-    def run(self, num_agents, days, eval_freq, log_callback=None):
+    def run(self, num_agents, days, eval_freq, log_callback=None, output_mode="summary"):
         """
         Runs the simulation loop for a specified number of days.
         Includes performance monitoring (per-day timers) and periodic evaluation phases.
+        
+        Args:
+            num_agents (int): Number of agents to simulate.
+            days (int): Number of days to simulate.
+            eval_freq (int): Evaluation frequency in days.
+            log_callback (callable, optional): Callback function for logging.
+            output_mode (str): Determines the return format:
+                - "summary": Returns [daily_path, centre_path, convergence_path] CSV files.
+                - "parquet_paths": Saves raw visits to temporary parquets, returns list of Path objects.
+                - "dataframes": Returns list of in-memory DataFrames of raw visits.
         """
         def log(msg):
             if log_callback:
@@ -58,6 +68,7 @@ class SimulationEngine:
         log(f"Initialising {num_agents} agents over {days} days...")
         self.population = ConsumerPopulation(num_agents, self.consumers_df)
         self.retail_manager = RetailManager(self.amenity_binary)
+        self.eval_period_visits = []
 
         # --- Real-Time Aggregation (Memory Efficient) ---
         # Instead of raw logs, we maintain running totals for Daily and Centre performance
@@ -71,6 +82,18 @@ class SimulationEngine:
             _map_df['household'] = _map_df['household'].astype(str)
             subcluster_map = _map_df.drop_duplicates('household').set_index('household')['Geo_Subcluster']
 
+        # Determine behavior based on output_mode
+        save_raw = output_mode in ("parquet_paths", "dataframes")
+        if output_mode == "parquet_paths":
+            from simulation.core import paths
+            from pathlib import Path
+            tmp_dir = paths.OUTPUT_DIR / '_visits_tmp'
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            written_files = []
+            period_visits_list = []
+        elif output_mode == "dataframes":
+            all_visits = []
+
         for day in range(1, days + 1):
             day_start = time.time()
             log(f"Day {day}/{days}...")
@@ -78,8 +101,14 @@ class SimulationEngine:
             
             # Calculate "Daily Pulse" (Temporal Variability for NTS)
             variance = getattr(config, 'PROBABILITY_VARIANCE', 0.0)
-            daily_pulse = np.random.normal(1.0, variance) if variance > 0 else 1.0
-            daily_pulse = np.clip(daily_pulse, 0.5, 1.5) # Prevent extreme values
+            if isinstance(variance, dict):
+                daily_pulse = {}
+                for t_type, v_val in variance.items():
+                    pulse = np.random.normal(1.0, v_val) if v_val > 0 else 1.0
+                    daily_pulse[t_type] = np.clip(pulse, 0.5, 1.5)
+            else:
+                pulse = np.random.normal(1.0, variance) if variance > 0 else 1.0
+                daily_pulse = np.clip(pulse, 0.5, 1.5) # Prevent extreme values
 
             # 1. Consumption & Need Detection (Stable Grocery)
             self.population.consume()
@@ -92,13 +121,16 @@ class SimulationEngine:
             online_mask = needs_grocery & (grocery_mode_series == 'online')
             if online_mask.any():
                 idx = self.population.state_df[online_mask].index
-                current_period.append(pd.DataFrame({
+                trip_data = {
                     'Day': day, 'AgentID': self.population.state_df.loc[idx, 'AgentID'].values,
                     'Postcode': self.population.state_df.loc[idx, 'Postcode'].values,
                     'Trip_Type': 'grocery', 'Retail_Centre': 'ONLINE',
                     'Grocery_Mode': 'online', 'Transport_Mode': None,
                     'Utility_Modifier': 1.0, 'Utility_Score': 0.0
-                }))
+                }
+                if save_raw:
+                    trip_data['Travel_Time_Min'] = 0.0
+                current_period.append(pd.DataFrame(trip_data))
 
             # 3. Trip Chaining Logic
             trips_to_place = {t: mask.copy() for t, mask in nts_triggered.items()}
@@ -143,6 +175,10 @@ class SimulationEngine:
                         pc_series = self.population.state_df.loc[v_idx, 'Postcode']
                         tm_series = modes.loc[v_idx].fillna('drive')
                         
+                        tt_series = None
+                        if save_raw:
+                            tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
+
                         for t_type in combo_list:
                             util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
                             f_mults = pd.Series(1.0, index=v_idx)
@@ -154,13 +190,16 @@ class SimulationEngine:
                                     if key in self.utility_matrices:
                                         f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                             
-                            current_period.append(pd.DataFrame({
+                            trip_data = {
                                 'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                                 'Postcode': pc_series.values, 'Trip_Type': t_type,
                                 'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
                                 'Transport_Mode': modes.loc[v_idx].values,
                                 'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
-                            }))
+                            }
+                            if save_raw and tt_series is not None:
+                                trip_data['Travel_Time_Min'] = tt_series.values
+                            current_period.append(pd.DataFrame(trip_data))
                             trips_to_place[t_type].loc[v_idx] = False
 
             # 4. Independent Trips
@@ -178,6 +217,10 @@ class SimulationEngine:
                     pc_series = self.population.state_df.loc[v_idx, 'Postcode']
                     tm_series = modes.loc[v_idx].fillna('drive')
                     
+                    tt_series = None
+                    if save_raw:
+                        tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
+                    
                     util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
                     f_mults = pd.Series(1.0, index=v_idx)
                     for tmode in TRANSPORT_MODES:
@@ -188,13 +231,16 @@ class SimulationEngine:
                             if key in self.utility_matrices:
                                 f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                                 
-                    current_period.append(pd.DataFrame({
+                    trip_data = {
                         'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
                         'Postcode': pc_series.values, 'Trip_Type': t_type,
                         'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
                         'Transport_Mode': modes.loc[v_idx].values,
                         'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
-                    }))
+                    }
+                    if save_raw and tt_series is not None:
+                        trip_data['Travel_Time_Min'] = tt_series.values
+                    current_period.append(pd.DataFrame(trip_data))
 
             self.population.replenish_stock(needs_grocery, grocery_mode_series)
 
@@ -202,6 +248,7 @@ class SimulationEngine:
             perf_update = None
             if current_period:
                 day_df = pd.concat(current_period, ignore_index=True)
+                self.eval_period_visits.append(day_df)
                 
                 # A. Update Daily Summary (City-wide Pulse)
                 # Count trips by type and mode for the daily overview
@@ -234,11 +281,38 @@ class SimulationEngine:
                 # C. Periodic Retail Evaluation (for interventions)
                 if day % eval_freq == 0:
                     log(f"Evaluating retail centres (Day {day})...")
-                    messages = self.retail_manager.evaluate_centres(day_df, self.utility_matrices)
+                    eval_df = pd.concat(self.eval_period_visits, ignore_index=True) if self.eval_period_visits else day_df
+                    messages = self.retail_manager.evaluate_centres(eval_df, self.utility_matrices)
                     for msg in messages: log(msg)
+                    self.eval_period_visits.clear()
 
                     diffusion_msgs = self.population.apply_social_influence(day_df, self.utility_matrices, self.base_utilities)
                     for msg in diffusion_msgs: log(msg)
+
+                # Accumulate/save raw outputs based on mode
+                if output_mode == "parquet_paths":
+                    period_visits_list.append(day_df)
+                    if day % eval_freq == 0:
+                        period_df = pd.concat(period_visits_list, ignore_index=True)
+                        if subcluster_map is not None:
+                            period_df['Geo_Subcluster'] = (
+                                period_df['AgentID'].astype(str)
+                                .map(subcluster_map.astype(str))
+                                .fillna('none')
+                            )
+                        fpath = tmp_dir / f'period_day{day}.parquet'
+                        period_df.to_parquet(fpath, index=False)
+                        written_files.append(fpath)
+                        del period_df
+                        period_visits_list.clear()
+                elif output_mode == "dataframes":
+                    if subcluster_map is not None:
+                        day_df['Geo_Subcluster'] = (
+                            day_df['AgentID'].astype(str)
+                            .map(subcluster_map.astype(str))
+                            .fillna('none')
+                        )
+                    all_visits.append(day_df)
 
                 del day_df
                 current_period.clear()
@@ -249,13 +323,35 @@ class SimulationEngine:
             day_elapsed = time.time() - day_start
             log(f"  -> Day {day} complete in {day_elapsed:.2f}s")
 
-        # 6. Final Save (Summary Files)
-        return self._save_summary_results()
+        # Flush any remaining days if in parquet_paths mode
+        if output_mode == "parquet_paths" and period_visits_list:
+            remainder_df = pd.concat(period_visits_list, ignore_index=True)
+            if subcluster_map is not None:
+                remainder_df['Geo_Subcluster'] = (
+                    remainder_df['AgentID'].astype(str)
+                    .map(subcluster_map.astype(str))
+                    .fillna('none')
+                )
+            fpath = tmp_dir / 'period_remainder.parquet'
+            remainder_df.to_parquet(fpath, index=False)
+            written_files.append(fpath)
+            del remainder_df
+            period_visits_list.clear()
+
+        # 6. Final Save / Return based on mode
+        summary_files = self._save_summary_results()
+        
+        if output_mode == "parquet_paths":
+            return written_files
+        elif output_mode == "dataframes":
+            return all_visits
+        else: # summary
+            return summary_files
 
     def _save_summary_results(self):
         """Saves the final aggregated summaries to CSV."""
         from simulation.core import paths
-        import time
+        import datetime
         from scipy.stats import spearmanr
         
         # Calculate Spearman correlation to final anchor R_T (for both cumulative and daily ranks)
@@ -273,7 +369,7 @@ class SimulationEngine:
                 val = float(res.statistic) if not np.isnan(res.statistic) else np.nan
                 self.utility_convergence_records[idx]['Spearman_Daily_Final_Anchor'] = val
 
-        timestamp = int(time.time())
+        timestamp = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
         daily_dir = paths.OUTPUT_DIR / 'daily_summaries'
         centre_dir = paths.OUTPUT_DIR / 'centre_performance'
         convergence_dir = paths.OUTPUT_DIR / 'utility_convergence'
@@ -303,21 +399,63 @@ class SimulationEngine:
     def _calculate_centre_attractiveness(self):
         """
         Calculates the attractiveness utility (U_t) for all retail centres.
-        For each retail centre, it is the average utility score across all agents
-        and all utility matrices where the centre is present.
+        For each centre, it averages utility across the retail trip type groups
+        in which that centre is present, rather than averaging across every
+        individual mode-specific matrix.
         """
-        u_sums = pd.Series(0.0, index=self.centre_ids)
-        u_counts = pd.Series(0.0, index=self.centre_ids)
-        
-        for matrix in self.utility_matrices.values():
-            # Use numpy mean with float32 dtype to avoid upcasting the entire large DataFrame to float64
-            col_means_arr = np.mean(matrix.values, axis=0, dtype=np.float32)
-            col_means = pd.Series(col_means_arr, index=matrix.columns)
-            aligned_mean = col_means.reindex(self.centre_ids, fill_value=0.0)
-            u_sums += aligned_mean
-            u_counts += 1.0
-            
-        return (u_sums / u_counts).values
+        trip_type_groups = {
+            'grocery': [],
+            'comparison': [],
+            'service': [],
+            'entertainment': [],
+            'food_drink': []
+        }
+
+        for key, matrix in self.utility_matrices.items():
+            prefix = key.split('_')[0]
+            if prefix in TRANSPORT_MODES:
+                # This should not happen for the configured matrix naming convention
+                continue
+            if prefix in trip_type_groups:
+                group = prefix
+            elif prefix in [m for m in TRIP_TYPE_CONFIG if m != 'grocery']:
+                group = prefix
+            elif prefix in getattr(config, 'GROCERY_MODES', []):
+                group = 'grocery'
+            elif prefix in ['bulk', 'convenience']:
+                group = 'grocery'
+            else:
+                continue
+            trip_type_groups[group].append(matrix)
+
+        group_sums = {group: pd.Series(0.0, index=self.centre_ids) for group in trip_type_groups}
+        group_counts = {group: pd.Series(0.0, index=self.centre_ids) for group in trip_type_groups}
+
+        for group, matrices in trip_type_groups.items():
+            for matrix in matrices:
+                col_means_arr = np.mean(matrix.values, axis=0, dtype=np.float32)
+                col_means = pd.Series(col_means_arr, index=matrix.columns)
+                aligned_mean = col_means.reindex(self.centre_ids)
+                group_sums[group] += aligned_mean.fillna(0.0)
+                group_counts[group] += aligned_mean.notna().astype(np.float32)
+
+        group_means = {}
+        for group in trip_type_groups:
+            valid = group_counts[group] > 0
+            group_means[group] = pd.Series(0.0, index=self.centre_ids)
+            group_means[group][valid] = group_sums[group][valid] / group_counts[group][valid]
+
+        overall_sum = pd.Series(0.0, index=self.centre_ids)
+        overall_count = pd.Series(0.0, index=self.centre_ids)
+        for group in trip_type_groups:
+            valid = group_counts[group] > 0
+            overall_sum[valid] += group_means[group][valid]
+            overall_count[valid] += 1.0
+
+        valid_overall = overall_count > 0
+        result = pd.Series(0.0, index=self.centre_ids)
+        result[valid_overall] = overall_sum[valid_overall] / overall_count[valid_overall]
+        return result.values
 
     def _track_utility_convergence(self, day, perf_update=None):
         """
