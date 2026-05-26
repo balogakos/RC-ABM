@@ -4,6 +4,45 @@ import config
 # NOTE: demographic_similarity_scores is moved to word_of_mouth.py or utility_engine.py
 from simulation.core.utility_engine import demographic_similarity_scores
 
+_centre_decay_lookup = None
+
+def get_centre_decays(centre_ids):
+    global _centre_decay_lookup
+    if _centre_decay_lookup is None:
+        try:
+            import geopandas as gpd
+            gdf = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
+            def clean_id(x):
+                s = str(x).strip()
+                return s[:-2] if s.endswith('.0') else s
+            gdf['RC_ID'] = gdf['RC_ID'].apply(clean_id)
+            gdf = gdf.set_index('RC_ID')
+            
+            # Estimate POI count per centre
+            poi_col = 'Total_POI_' if 'Total_POI_' in gdf.columns else None
+            if not poi_col:
+                amenity_cols = ['Foodstore', 'Personal Service', 'Professional Services', 
+                                'Entertainment', 'Convenience Store', 'Retail', 'Restaurant', 'Cafe']
+                existing_cols = [col for col in amenity_cols if col in gdf.columns]
+                gdf['POI_Count'] = gdf[existing_cols].sum(axis=1)
+                poi_series = gdf['POI_Count']
+            else:
+                poi_series = gdf[poi_col]
+                
+            # Scale decay between 0.60 (small, quick decay) and 0.90 (large, slow decay)
+            min_poi, max_poi = poi_series.min(), poi_series.max()
+            if max_poi > min_poi:
+                log_pois = np.log1p(poi_series)
+                log_min, log_max = log_pois.min(), log_pois.max()
+                decay_series = 0.60 + 0.30 * (log_pois - log_min) / (log_max - log_min)
+            else:
+                decay_series = pd.Series(0.75, index=gdf.index)
+            _centre_decay_lookup = decay_series.to_dict()
+        except Exception as e:
+            print(f"Warning: Could not compute centre-specific decays. Error: {e}")
+            _centre_decay_lookup = {}
+    return {str(cid): _centre_decay_lookup.get(str(cid), 0.75) for cid in centre_ids}
+
 def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices, base_utility_matrices=None):
     """
     Implements a socially mediated utility adjustment mechanism.
@@ -20,14 +59,16 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices, ba
     alpha = getattr(config, 'SOCIAL_SCALING_ALPHA', 0.05)
     decay = getattr(config, 'SOCIAL_DECAY_FACTOR', 1.0)
     
-    # 0. Apply Decay (reverting towards base geography)
+    # 0. Apply Centre-Specific Decay (reverting towards base geography)
     if decay < 1.0 and base_utility_matrices is not None:
         for key, matrix in utility_matrices.items():
             if key in base_utility_matrices:
                 base = base_utility_matrices[key]
-                # U = Base + (U - Base) * Decay
-                # This only shrinks the "Social" part, keeps "Distance" fixed.
-                matrix.update(base + (matrix - base) * decay)
+                # Get centre-specific decays for columns in matrix
+                decays = get_centre_decays(matrix.columns)
+                decay_array = np.array([decays.get(col, 0.75) for col in matrix.columns], dtype=np.float16)
+                # U = Base + (U - Base) * Decay (vectorized along columns)
+                matrix.update(base + (matrix - base) * decay_array)
     
     # 1. Pre-process mapping: Agent -> Postcode Sector (first 3 chars)
     if 'household' in attributes_df.columns:
@@ -114,8 +155,16 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices, ba
         else:
             s_vec = np.ones(len(agent_to_postcode))
             
-        # Total Influence I(i,c)
-        i_vec = c_coeff * s_vec * p_vec
+        # Sigmoid social influence (S-curve of adoption / Bass-like diffusion)
+        # f(P_sc) = 1 / (1 + exp(-k * (P_sc - P0)))
+        # Zero popularity should always result in zero influence, so we mask by (p_vec > 0).
+        P0 = getattr(config, 'DIFFUSION_POPULATION_RATIO', 0.05)
+        k = 100.0  # Steepness of adoption S-curve
+        sig_p = 1.0 / (1.0 + np.exp(-k * (p_vec - P0)))
+        sig_p = sig_p * (p_vec > 0)
+
+        # Total Influence I(i,c) using the non-linear popularity sigmoid
+        i_vec = c_coeff * s_vec * sig_p
         
         # Additive Update: U = U + alpha * I
         boost_term = (alpha * i_vec).astype(np.float16)
