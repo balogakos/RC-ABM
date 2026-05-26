@@ -137,5 +137,11 @@ DISTANCE_SENSITIVITY   = 1.0
 RETAIL_INTERVENTION    = 1.0
 
 # --- Temporal Variability ---
-# Controls the random daily fluctuation in trip probabilities (0.15 = +/- 15%)
-PROBABILITY_VARIANCE   = 0.15
+# Controls the random daily fluctuation in trip probabilities per category (standard deviation)
+PROBABILITY_VARIANCE = {
+    'comparison': 0.15,
+    'entertainment': 0.15,
+    'food_drink': 0.15,
+    'grocery': 0.15,
+    'service': 0.15
+}
