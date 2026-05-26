@@ -6,7 +6,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import contextily as ctx
 from pathlib import Path
 
 # =========================================================================
@@ -236,10 +235,6 @@ ax2.set_title('(B) Diffusion OFF - Residuals', fontweight='bold', fontsize=14, l
 
 # Apply basemaps and decorations to map axes
 for ax in [ax1, ax2]:
-    try:
-        ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels)
-    except Exception as e:
-        print(f"Warning: Failed to load basemap: {e}")
     if gdf_boundary is not None:
         try:
             gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)

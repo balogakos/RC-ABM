@@ -6,7 +6,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import contextily as ctx
 from pathlib import Path
 
 # =========================================================================
@@ -250,52 +249,10 @@ gdf_points['lisa_obs'] = calculate_lisa(coords, gdf_points['real_visits'].values
 gdf_points['lisa_sim'] = calculate_lisa(coords, gdf_points['sim_visits'].values, seed=20)
 
 # =========================================================================
-# --- Load Diffusion Data for comparison ---
+# --- Plotting LISA Cluster Comparison ---
 # =========================================================================
-print("Loading diffusion comparison data...")
-cp_files = sorted(CENTRE_DIR.glob('retail_centre_performance_*.csv'), key=os.path.getmtime)
-if cp_files:
-    latest_file = cp_files[-1]
-    df_sim = pd.read_csv(latest_file)
-    visit_cols = [c for c in df_sim.columns if c != 'Retail_Centre']
-    df_sim['sim_visits_on'] = df_sim[visit_cols].sum(axis=1)
-    df_sim['clean_id'] = df_sim['Retail_Centre'].apply(clean_id)
-    df_sim_clean = df_sim[['clean_id', 'sim_visits_on']].copy()
-    
-    # Merge to get diffusion data, preserving geometry from gdf_points
-    gdf_diff = gdf_points.merge(df_sim_clean, on='clean_id', how='left')
-    gdf_diff['sim_visits_on'] = gdf_diff['sim_visits_on'].fillna(0)
-    
-    # Generate synthetic Diffusion OFF data
-    np.random.seed(100)
-    noise_off = np.random.normal(0, 0.25 * gdf_diff['real_visits'])
-    gdf_diff['sim_visits_off'] = np.clip(gdf_diff['real_visits'] + noise_off, 0, None).round(0)
-    
-    # Compute residuals
-    gdf_diff['diff_on'] = gdf_diff['sim_visits_on'] - gdf_diff['real_visits']
-    gdf_diff['diff_off'] = gdf_diff['sim_visits_off'] - gdf_diff['real_visits']
-    
-    # For binning: determine common limits
-    max_diff = max(
-        abs(gdf_diff['diff_on'].min()), abs(gdf_diff['diff_on'].max()),
-        abs(gdf_diff['diff_off'].min()), abs(gdf_diff['diff_off'].max())
-    )
-    if max_diff == 0:
-        max_diff = 1
-    bins = [-max_diff * 0.5, -max_diff * 0.1, max_diff * 0.1, max_diff * 0.5]
-    
-    gdf_diff_points = gdf_diff.copy()
-    gdf_diff_points['geometry'] = gdf_diff_points.geometry.centroid
-else:
-    gdf_diff = None
-    gdf_diff_points = None
-    print("WARNING: Could not load diffusion data")
-
-# =========================================================================
-# --- Plotting LISA Cluster Comparison with Diffusion ---
-# =========================================================================
-print("Plotting 2x2 comparison: LISA (top) and Diffusion Residuals (bottom)...")
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 16))
+print("Plotting 1x2 comparison: Observed and Simulated LISA clusters...")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 9))
 
 # LISA Color Scheme
 lisa_colors = {
@@ -357,55 +314,8 @@ for ax in [ax1, ax2]:
               loc='upper right', title='LISA Type', fontsize='small', markerscale=1.0,
               handletextpad=0.5, labelspacing=0.7, borderpad=0.4)
 
-# Panel C & D: Diffusion Residuals (only if diffusion data loaded)
-if gdf_diff_points is not None:
-    diff_marker_style = dict(edgecolor='black', linewidth=0.8, alpha=0.9)
-    diff_sizes = np.clip(gdf_diff_points['center_size'] * 1.5, 15, 600)
-    
-    # Panel C: Diffusion ON Residuals
-    gdf_diff_points.plot(
-        ax=ax3,
-        column='diff_on',
-        cmap='RdBu',
-        scheme='UserDefined',
-        classification_kwds={'bins': bins},
-        markersize=diff_sizes,
-        legend=True,
-        legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
-        **diff_marker_style,
-        zorder=6
-    )
-    ax3.set_title('(C) Diffusion ON - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
-    
-    # Panel D: Diffusion OFF Residuals
-    gdf_diff_points.plot(
-        ax=ax4,
-        column='diff_off',
-        cmap='RdBu',
-        scheme='UserDefined',
-        classification_kwds={'bins': bins},
-        markersize=diff_sizes,
-        legend=True,
-        legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
-        **diff_marker_style,
-        zorder=6
-    )
-    ax4.set_title('(D) Diffusion OFF - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
-    
-    # Style diffusion axes
-    for ax in [ax3, ax4]:
-        if gdf_boundary is not None:
-            try:
-                gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
-            except Exception as e:
-                print(f"Warning: Failed to draw Liverpool boundary: {e}")
-        ax.set_axis_off()
-        zoom_out(ax, 0.10)
-        add_north_arrow(ax)
-        add_scale_bar(ax)
-
-fig.subplots_adjust(wspace=0.05, hspace=0.05)
+fig.subplots_adjust(wspace=0.10, hspace=0.05)
 output_lisa_path = OUTPUTS_ROOT / 'lisa_diffusion_comparison.png'
 plt.savefig(output_lisa_path, dpi=300, bbox_inches='tight')
-print(f"SUCCESS: LISA/Diffusion comparison saved to: {output_lisa_path}")
+print(f"SUCCESS: LISA comparison saved to: {output_lisa_path}")
 plt.show()

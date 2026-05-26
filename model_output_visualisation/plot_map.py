@@ -20,7 +20,7 @@ USE_VALIDATION_DATA = True
 VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
 
 # Plot options: True to plot rank-transformed visits, False for raw visits
-PLOT_RANKED = False
+PLOT_RANKED = True
 
 
 # Import config from the simulation directory
@@ -100,8 +100,8 @@ if df_real is None:
     df_real = df_real[['clean_id', 'real_visits']]
 
 # Join datasets
-gdf_mapped = gdf_centers.merge(df_sim_clean, on='clean_id', how='left')
-gdf_mapped = gdf_mapped.merge(df_real, on='clean_id', how='left')
+gdf_mapped = gdf_centers.merge(df_sim_clean, on='clean_id', how='inner')
+gdf_mapped = gdf_mapped.merge(df_real, on='clean_id', how='inner')
 
 # Fill NaNs with 0
 gdf_mapped['sim_visits'] = gdf_mapped['sim_visits'].fillna(0)

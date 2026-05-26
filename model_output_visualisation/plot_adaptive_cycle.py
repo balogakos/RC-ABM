@@ -21,7 +21,7 @@ try:
     sys.path.append(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM')
     from simulation.config import EVAL_FREQ
 except ImportError:
-    EVAL_FREQ = 10
+    EVAL_FREQ = 30
 
 print(f"Adaptive performance cycle evaluation frequency: {EVAL_FREQ} days")
 
