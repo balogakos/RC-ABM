@@ -46,7 +46,8 @@ def trigger_trips(attributes_df, multiplier=1.0):
                     else np.zeros(len(attributes_df))
             
             # Apply temporal variability
-            effective_probs = np.clip(probs * multiplier, 0, 1)
+            m = multiplier.get(trip_type, 1.0) if isinstance(multiplier, dict) else multiplier
+            effective_probs = np.clip(probs * m, 0, 1)
             
             triggered[trip_type] = pd.Series(rand_matrix[:, i] < effective_probs,
                                              index=attributes_df.index)
