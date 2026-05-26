@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import shutil
 import pandas as pd
 import numpy as np
 import pyarrow.parquet as pq
@@ -22,20 +23,22 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Ensemble Configuration ---
-NUM_RUNS  = 5      # Number of iterations to average out uncertainty
-DAYS      = 180
-EVAL_FREQ = 30
+NUM_RUNS    = 5      # Number of iterations to average out uncertainty
+DAYS        = 90
+EVAL_FREQ   = 15
+SAMPLE_SIZE = 131363   # 20% of 656817 agents to speed up execution and save memory
 
 def _clean_rc_id(x):
     s = str(x)
     return s[:-2] if s.endswith('.0') else s
 
-def load_simulation_data(n_agents: int = None) -> tuple:
+def load_simulation_data(n_agents: int = None, run_id: int = 1) -> tuple:
     """
     Standalone loader for ensemble runs using trip-specific files.
     Returns (consumers_df, utility_matrices, amenity_binary, tt_lookup).
     """
-    print(f"Loading 6 trip-specific utility datasets from {config.UTILITY_DIR}...")
+    utility_dir = config.PROCESSED_DIR
+    print(f"Loading 6 trip-specific utility datasets from {utility_dir}...")
     
     trip_types = ['bulk', 'convenience', 'comparison', 'entertainment', 'food_drink', 'service']
     suffixes = ['_walk', '_drive', '_pt']
@@ -45,20 +48,21 @@ def load_simulation_data(n_agents: int = None) -> tuple:
 
     sampled_households = None
     if n_agents:
-        first_file = os.path.join(config.UTILITY_DIR, f'utility_scores_{trip_types[0]}.parquet')
+        first_file = os.path.join(utility_dir, f'utility_scores_{trip_types[0]}.parquet')
         if not os.path.exists(first_file):
             raise FileNotFoundError(f"Required utility dataset missing: {first_file}")
         print("Identifying unique households for random sampling...")
         all_households = pd.read_parquet(first_file, columns=['household'])['household'].unique()
         if n_agents < len(all_households):
-            np.random.seed(42)  # Use a fixed seed for reproducible random selection
+            # Dynamic seed per run to ensure we get different random samples for each run
+            np.random.seed(42 + run_id)
             sampled_households = np.random.choice(all_households, size=n_agents, replace=False).tolist()
-            print(f"Randomly selected {n_agents} households out of {len(all_households)}.")
+            print(f"Randomly selected {n_agents} households out of {len(all_households)} (using seed {42 + run_id}).")
         else:
             print(f"Requested agents {n_agents} is >= total unique households {len(all_households)}. Loading all agents.")
 
     for trip_type in trip_types:
-        file_path = os.path.join(config.UTILITY_DIR, f'utility_scores_{trip_type}.parquet')
+        file_path = os.path.join(utility_dir, f'utility_scores_{trip_type}.parquet')
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Required utility dataset missing: {file_path}")
             
@@ -117,11 +121,14 @@ def run_single_iteration(run_id):
     import time
     print(f"--- [Run {run_id}] Initializing process... ---")
     
+    # Set seed for reproducibility of stochastic choices in this run
+    np.random.seed(100 + run_id)
+    
     # Load data locally in each process (safer for multiprocessing)
-    # Use config to determine test mode
+    # Always load from the main directory, but sample randomly using SAMPLE_SIZE
     test_mode = getattr(config, 'TEST_MODE', False)
-    n_agents = 100 if test_mode else None
-    consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents)
+    n_agents = 100 if test_mode else SAMPLE_SIZE
+    consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents, run_id=run_id)
     
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
     
@@ -137,47 +144,27 @@ def run_single_iteration(run_id):
     start_time = time.time()
     print(f"--- [Run {run_id}] Simulation started... ---")
     
-    visits = engine.run(
+    summary_files = engine.run(
         num_agents=len(consumers_df), 
         days=DAYS, 
-        eval_freq=EVAL_FREQ
+        eval_freq=EVAL_FREQ,
+        output_mode="summary"
     )
     
-    if visits:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-
-        output_path = results_dir / f"run_{run_id}.parquet"
-
-        # Merge period files on-disk without loading everything into RAM at once.
-        # PyArrow reads and writes each file sequentially so peak RAM is a single period.
-        writer = None
-        try:
-            for fpath in visits:
-                table = pq.read_table(fpath)
-                if writer is None:
-                    writer = pq.ParquetWriter(output_path, table.schema)
-                writer.write_table(table)
-        finally:
-            if writer:
-                writer.close()
-
-        # Clean up temp period files
-        for fpath in visits:
-            try:
-                fpath.unlink()
-            except OSError:
-                pass
-        try:
-            visits[0].parent.rmdir()
-        except (OSError, IndexError):
-            pass
+    if summary_files:
+        copied_files = []
+        for src_path in summary_files:
+            dest_path = results_dir / f"run_{run_id}_{src_path.name}"
+            shutil.copy2(src_path, dest_path)
+            copied_files.append(dest_path)
 
         elapsed = time.time() - start_time
-        print(f"--- [Run {run_id}] COMPLETE in {elapsed:.1f}s. Saved to {output_path.name} ---")
+        print(f"--- [Run {run_id}] COMPLETE in {elapsed:.1f}s. Saved summary outputs to multi_runs/results/ ---")
+        for p in copied_files:
+            print(f"     {p.name}")
         return f"Run {run_id} Success"
     else:
-        print(f"--- [Run {run_id}] FAILED (No visits generated) ---")
+        print(f"--- [Run {run_id}] FAILED (No summary files generated) ---")
         return f"Run {run_id} No Data"
 
 def run_ensemble():
