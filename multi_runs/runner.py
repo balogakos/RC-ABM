@@ -91,6 +91,12 @@ def load_simulation_data(n_agents: int = None, run_id: int = 1) -> tuple:
         if trip_type == 'bulk':
             meta_cols = [c for c in df.columns if not any(c.endswith(s) for s in suffixes)]
             consumers_df = df[meta_cols].copy()
+            # Pre-normalize grocery mode probabilities to align with main.py
+            grocery_prob_cols = ['prob_online', 'prob_bulk', 'prob_convenience']
+            if all(c in consumers_df.columns for c in grocery_prob_cols):
+                row_sums = consumers_df[grocery_prob_cols].sum(axis=1).replace(0, 1.0)
+                consumers_df[grocery_prob_cols] = consumers_df[grocery_prob_cols].div(row_sums, axis=0)
+
             # Consistent with matrices
             consumers_df['household'] = consumers_df['household'].astype(str)
             if not consumers_df['household'].is_unique:
@@ -130,13 +136,13 @@ def run_single_iteration(run_id):
     n_agents = 100 if test_mode else SAMPLE_SIZE
     consumers_df, utility_matrices, amenity_binary, tt_lookup = load_simulation_data(n_agents, run_id=run_id)
     
-    engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
-    
-    # Thresholding: Zero out extremely low utilities to speed up softmax choice logic
-    # Aligned with main.py logic
-    THRESHOLD = 0.1
+    # Thresholding: Zero out extremely low utilities to speed up softmax choice logic in-place on the underlying numpy array
+    THRESHOLD = np.float16(0.1)
     for mat in utility_matrices.values():
-        mat[mat < THRESHOLD] = 0.0
+        arr = mat.values
+        arr[arr < THRESHOLD] = np.float16(0.0)
+        
+    engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
         
     results_dir = Path(ROOT_DIR) / "multi_runs" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
