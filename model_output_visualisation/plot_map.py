@@ -15,17 +15,17 @@ from matplotlib.lines import Line2D
 # =========================================================================
 # --- CONFIGURATION ---
 # =========================================================================
-# Toggle to use real validation data or synthetic comparison data
 USE_VALIDATION_DATA = True
-VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
+PROJECT_ROOT = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM')
+VALIDATION_DATA_PATH = PROJECT_ROOT / 'model_output_visualisation' / 'synthetic_data' / 'footfall_validation.csv'
+VACANCY_DATA_PATH = PROJECT_ROOT / 'model_output_visualisation' / 'synthetic_data' / 'vacancy_rankings.csv'
+SPEND_DATA_PATH = PROJECT_ROOT / 'model_output_visualisation' / 'synthetic_data' / 'spend_rankings.csv'
 
-# Plot options: True to plot rank-transformed visits, False for raw visits
+# Plot options: True to plot rank-transformed visits
 PLOT_RANKED = True
-
 
 # Import config from the simulation directory
 import sys
-PROJECT_ROOT = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM')
 sys.path.insert(0, str(PROJECT_ROOT / 'simulation'))
 import config
 
@@ -39,7 +39,7 @@ def clean_id(x):
     try:
         if pd.isna(x):
             return "Unknown"
-        s = str(x)
+        s = str(x).strip()
         if s.endswith('.0'):
             return s[:-2]
         return s
@@ -47,7 +47,7 @@ def clean_id(x):
         return str(x)
 
 # =========================================================================
-# --- 1. Load Simulation Data ---
+# --- 1. Load Data ---
 # =========================================================================
 print("Locating latest retail centre performance run...")
 cp_files = sorted(CENTRE_DIR.glob('retail_centre_performance_*.csv'), key=os.path.getmtime)
@@ -64,133 +64,85 @@ df_sim['sim_visits'] = df_sim[visit_cols].sum(axis=1)
 df_sim['clean_id'] = df_sim['Retail_Centre'].apply(clean_id)
 df_sim_clean = df_sim[['clean_id', 'sim_visits']].copy()
 
-# =========================================================================
-# --- 2. Load Geometry Data ---
-# =========================================================================
+# Load geometry data
 print(f"Loading spatial data from: {GPKG_PATH.name}")
-if not GPKG_PATH.exists():
-    raise FileNotFoundError(f"Retail centre GPKG not found at {GPKG_PATH}")
-
 gdf_centers = gpd.read_file(GPKG_PATH, layer='retail_centre_counts')
 gdf_centers['clean_id'] = gdf_centers['RC_ID'].apply(clean_id)
 
-# =========================================================================
-# --- 3. Handle Validation Data (Real-World Baseline) ---
-# =========================================================================
-df_real = None
-if USE_VALIDATION_DATA:
-    if VALIDATION_DATA_PATH.exists():
-        print(f"Loading real-world validation data from: {VALIDATION_DATA_PATH}")
-        df_real = pd.read_csv(VALIDATION_DATA_PATH)
-        df_real['clean_id'] = df_real['Retail_Centre'].apply(clean_id)
-        df_real = df_real[['clean_id', 'real_visits']].copy()
-    else:
-        print(f"WARNING: Validation file not found at {VALIDATION_DATA_PATH}.")
-        print("Falling back to generating synthetic validation data.")
+# Load real-world validation data
+df_real = pd.read_csv(VALIDATION_DATA_PATH)
+df_real['clean_id'] = df_real['Retail_Centre'].apply(clean_id)
+df_real = df_real[['clean_id', 'real_visits']].copy()
 
-if df_real is None:
-    # Generate synthetic validation data with noise for demo/placeholder purposes
-    print("Generating synthetic real-world baseline data...")
-    # Seed for reproducibility of placeholder noise
-    np.random.seed(42)
-    df_real = df_sim_clean.copy()
-    # Add normal noise with std = 15% of the simulated visits (min 0)
-    noise = np.random.normal(0, 0.15 * df_real['sim_visits'])
-    df_real['real_visits'] = np.clip(df_real['sim_visits'] + noise, 0, None).round(0)
-    df_real = df_real[['clean_id', 'real_visits']]
+df_vacancy = pd.read_csv(VACANCY_DATA_PATH)
+df_vacancy['clean_id'] = df_vacancy['Retail_Centre'].apply(clean_id)
+df_vacancy = df_vacancy[['clean_id', 'Vacancy Rank']].copy()
 
-# Join datasets
+df_spend = pd.read_csv(SPEND_DATA_PATH)
+df_spend['clean_id'] = df_spend['Retail_Centre'].apply(clean_id)
+df_spend = df_spend[['clean_id', 'Spend Rank']].copy()
+
+# Merge all datasets
 gdf_mapped = gdf_centers.merge(df_sim_clean, on='clean_id', how='inner')
 gdf_mapped = gdf_mapped.merge(df_real, on='clean_id', how='inner')
+gdf_mapped = gdf_mapped.merge(df_vacancy, on='clean_id', how='inner')
+gdf_mapped = gdf_mapped.merge(df_spend, on='clean_id', how='inner')
 
-# Fill NaNs with 0
-gdf_mapped['sim_visits'] = gdf_mapped['sim_visits'].fillna(0)
-gdf_mapped['real_visits'] = gdf_mapped['real_visits'].fillna(0)
-gdf_mapped['difference'] = gdf_mapped['sim_visits'] - gdf_mapped['real_visits']
+# Ranks
+gdf_mapped['sim_rank'] = gdf_mapped['sim_visits'].rank(ascending=False, method='min')
+gdf_mapped['real_rank'] = gdf_mapped['real_visits'].rank(ascending=False, method='min')
 
-# Define a size column for markers based on Total POIs (fallback to default if missing)
 if 'Total_POI_' in gdf_mapped.columns:
     gdf_mapped['center_size'] = gdf_mapped['Total_POI_']
 else:
     gdf_mapped['center_size'] = 100
 
-# Project to Web Mercator (EPSG:3857) for compatibility with web-map tile providers
+# Project to Web Mercator (EPSG:3857)
 print("Projecting geometry to EPSG:3857 (Web Mercator)...")
 gdf_mapped = gdf_mapped.to_crs(epsg=3857)
 
-# Convert polygons to centroids for clean point marker plotting
+# Convert to centroids for plotting
 gdf_points = gdf_mapped.copy()
 gdf_points['geometry'] = gdf_points.geometry.centroid
 
-# Load Liverpool boundary (optional) and project to Web Mercator
+# Load Liverpool boundary
 BOUNDARY_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\inputs\Liverpool Boundary\CA boundary_disolved.shp')
 gdf_boundary = None
 if BOUNDARY_PATH.exists():
     try:
-        gdf_boundary = gpd.read_file(BOUNDARY_PATH)
-        gdf_boundary = gdf_boundary.to_crs(epsg=3857)
+        gdf_boundary = gpd.read_file(BOUNDARY_PATH).to_crs(epsg=3857)
     except Exception as e:
         print(f"Warning: failed to read Liverpool boundary: {e}")
 
 # =========================================================================
-# --- 4. Helper Functions for Map Elements ---
+# --- 2. Helper Functions for Map Elements ---
 # =========================================================================
 def add_north_arrow(ax, position=(0.06, 0.94)):
-    """Draws a clean, minimalistic North arrow in the top-left of the axes."""
     ax.annotate('N', xy=position, xytext=(position[0], position[1] - 0.05),
                 xycoords='axes fraction', textcoords='axes fraction',
                 arrowprops=dict(facecolor='black', width=1.5, headwidth=6, headlength=6, shrink=0.1),
                 ha='center', va='top', fontsize=10, fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
 
-def add_scale_bar(ax, length_km=5, position=(0.06, 0.06)):
-    """Draws a scale bar on the axes (position given in axes fraction).
-
-    If the horizontal position is > 0.5 the bar will be drawn to the left
-    so it remains visible when placed near the right-hand edge.
-    """
+def add_scale_bar(ax, length_km=5, position=(0.95, 0.05)):
     lat_deg = 53.4
     cos_lat = np.cos(np.radians(lat_deg))
     mercator_length = (length_km * 1000) / cos_lat
-
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
-
-    # Adjust the chosen length if it would be too large for the current view
-    map_width_km = ((xmax - xmin) * cos_lat) / 1000.0
-    if map_width_km < length_km * 2:
-        if map_width_km >= 4.0:
-            length_km = 2
-        else:
-            length_km = 1
-        mercator_length = (length_km * 1000) / cos_lat
-
-    # Calculate proposed start position in data coords
-    frac_x, frac_y = position
-    y_pos = ymin + frac_y * (ymax - ymin)
-
-    # If positioned on the right half, draw the bar leftwards to keep it inside frame
-    if frac_x > 0.5:
-        x_end = xmin + frac_x * (xmax - xmin)
-        x_start = x_end - mercator_length
-    else:
-        x_start = xmin + frac_x * (xmax - xmin)
-        x_end = x_start + mercator_length
-
+    y_pos = ymin + position[1] * (ymax - ymin)
+    x_end = xmin + position[0] * (xmax - xmin)
+    x_start = x_end - mercator_length
     tick_height = 0.012 * (ymax - ymin)
-
-    # Draw scale bar line and ticks
+    
     ax.plot([x_start, x_end], [y_pos, y_pos], color='black', linewidth=2.5, zorder=5)
     ax.plot([x_start, x_start], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.5, zorder=5)
     ax.plot([x_end, x_end], [y_pos - tick_height, y_pos + tick_height], color='black', linewidth=1.5, zorder=5)
-
-    # Add text label above the bar
     ax.text((x_start + x_end) / 2, y_pos + tick_height * 0.8, f"{length_km} km",
             ha='center', va='bottom', fontsize=8.5, fontweight='bold', color='black', zorder=6,
             bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
 
 def zoom_out(ax, fraction=0.1):
-    """Expand axis limits by a fraction to give extra map padding."""
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
     dx = (xmax - xmin) * fraction
@@ -198,261 +150,182 @@ def zoom_out(ax, fraction=0.1):
     ax.set_xlim(xmin - dx, xmax + dx)
     ax.set_ylim(ymin - dy, ymax + dy)
 
-# =========================================================================
-# --- 5. Plotting 2x2 Layout ---
-# =========================================================================
-print("Generating maps and separate correlation plot outputs...")
-
-# Prepare consistent binned categories for the three maps to ensure stable legend ranks
 def safe_qcut(series, q=5):
     try:
-        cuts = pd.qcut(series.replace([np.inf, -np.inf], np.nan).fillna(0), q=q, labels=False, duplicates='drop')
-        # If qcut returned float dtype or all NaN, fallback to rank-based cut
-        if cuts.isnull().all():
-            return pd.Series(np.zeros(len(series)), index=series.index)
+        # Invert rank values if needed to make larger values represent higher spend/visits
+        cuts = pd.qcut(series, q=q, labels=False, duplicates='drop')
         return cuts.astype(float) + 1.0
     except Exception:
-        # fallback: equal-frequency via rank
         ranks = series.rank(method='first').fillna(0)
-        return pd.qcut(ranks, q=min(q, int(len(series.dropna()))), labels=False, duplicates='drop').astype(float) + 1.0
+        return pd.qcut(ranks, q=min(q, len(series.dropna())), labels=False, duplicates='drop').astype(float) + 1.0
 
 # Create binned numeric categories 1..5 for consistent legends
-gdf_points['sim_bin'] = safe_qcut(gdf_points['sim_visits'], q=5)
-gdf_points['real_bin'] = safe_qcut(gdf_points['real_visits'], q=5)
+gdf_points['sim_visits_bin'] = safe_qcut(gdf_points['sim_visits'], q=5)
+gdf_points['real_visits_bin'] = safe_qcut(gdf_points['real_visits'], q=5)
 
-# For difference, create symmetric bins around zero
-max_diff = max(abs(gdf_points['difference'].min()), abs(gdf_points['difference'].max()))
-if max_diff == 0:
-    max_diff = 1.0
-diff_bins = np.linspace(-max_diff, max_diff, 6)
-gdf_points['diff_bin'] = pd.cut(gdf_points['difference'].fillna(0), bins=diff_bins, labels=False, include_lowest=True).astype(float) + 1.0
+# For Spend Ranks: Invert because rank 1 is highest spend value
+gdf_points['sim_spend_bin'] = safe_qcut(1.0 / gdf_points['sim_rank'], q=5)
+gdf_points['real_spend_bin'] = safe_qcut(1.0 / gdf_points['Spend Rank'], q=5)
 
-# Common styling and sizes
-marker_style = dict(edgecolor='black', linewidth=0.6, alpha=0.9)
+# Styling and sizes
+marker_style = dict(edgecolor='black', linewidth=0.6, alpha=0.9, zorder=6)
 sizes = np.clip(gdf_points['center_size'] * 1.5, 15, 600)
 
-# FIGURE 1: Three maps side-by-side
-fig_maps, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 6))
+# Ranks residuals (Observed Rank - Simulated Rank)
+# positive = model overpredicted (simulated rank is smaller/better number than observed)
+# negative = model underpredicted
+gdf_points['footfall_residual'] = gdf_points['real_rank'] - gdf_points['sim_rank']
+gdf_points['spend_residual'] = gdf_points['Spend Rank'] - gdf_points['sim_rank']
 
-sc1 = gdf_points.plot(
-    ax=ax1,
-    column='sim_bin',
-    cmap='Blues',
-    categorical=True,
-    markersize=sizes,
-    legend=True,
-    legend_kwds={'title': 'Simulated (quantiles)', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax1.set_title('(A) Simulated Activity', fontweight='bold', fontsize=12, loc='left')
+# =========================================================================
+# --- 3. Plotting 3x2 Spatial Reproduction Maps ---
+# =========================================================================
+print("Generating 3x2 spatial reproduction maps with residuals...")
+fig_maps, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2, 3, figsize=(22, 15))
 
-sc2 = gdf_points.plot(
-    ax=ax2,
-    column='real_bin',
-    cmap='Blues',
-    categorical=True,
-    markersize=sizes,
-    legend=True,
-    legend_kwds={'title': 'Baseline (quantiles)', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax2.set_title('(B) Real-World Baseline', fontweight='bold', fontsize=12, loc='left')
+# Top Row: Footfall (Visits)
+gdf_points.plot(ax=ax1, column='real_visits_bin', cmap='Oranges', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Observed Footfall (quantiles)', 'fontsize': 'small'}, **marker_style)
+ax1.set_title('7.1 Observed Retail Footfall', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 
-sc3 = gdf_points.plot(
-    ax=ax3,
-    column='diff_bin',
-    cmap='RdBu',
-    categorical=True,
-    markersize=sizes,
-    legend=True,
-    legend_kwds={'title': 'Residual (binned)', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax3.set_title('(C) Simulation Residuals', fontweight='bold', fontsize=12, loc='left')
+gdf_points.plot(ax=ax2, column='sim_visits_bin', cmap='Blues', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Simulated Footfall (quantiles)', 'fontsize': 'small'}, **marker_style)
+ax2.set_title('7.2 Simulated Retail Footfall', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 
-# Add boundary, north arrow and scale bar for each map axis
-for ax in (ax1, ax2, ax3):
+# Footfall Residuals (Quantile Bins)
+def residual_qcut(series, q=5):
+    """Bin residuals into quantiles with descriptive labels."""
+    try:
+        cuts = pd.qcut(series, q=q, labels=False, duplicates='drop')
+        return cuts.astype(float) + 1.0
+    except Exception:
+        ranks = series.rank(method='first').fillna(0)
+        return pd.qcut(ranks, q=min(q, len(series.dropna())), labels=False, duplicates='drop').astype(float) + 1.0
+
+gdf_points['footfall_resid_bin'] = residual_qcut(gdf_points['footfall_residual'], q=5)
+gdf_points.plot(ax=ax3, column='footfall_resid_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax3.set_title('7.3 Footfall Rank Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+# Bottom Row: Spend (Inverse Ranks)
+gdf_points.plot(ax=ax4, column='real_spend_bin', cmap='Purples', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Observed Spend (quantiles)', 'fontsize': 'small'}, **marker_style)
+ax4.set_title('7.4 Observed Retail Spend', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+gdf_points.plot(ax=ax5, column='sim_spend_bin', cmap='Blues', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Simulated Spend (quantiles)', 'fontsize': 'small'}, **marker_style)
+ax5.set_title('7.5 Simulated Retail Spend', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+# Spend Residuals (Quantile Bins)
+gdf_points['spend_resid_bin'] = residual_qcut(gdf_points['spend_residual'], q=5)
+gdf_points.plot(ax=ax6, column='spend_resid_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax6.set_title('7.6 Spend Rank Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+# Add boundary, north arrow and scale bar
+for ax in (ax1, ax2, ax3, ax4, ax5, ax6):
     if gdf_boundary is not None:
         try:
-            gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
-        except Exception as e:
-            print(f"Warning: Failed to draw Liverpool boundary: {e}")
+            gdf_boundary.boundary.plot(ax=ax, edgecolor='#475569', linewidth=0.8, zorder=5, alpha=0.6)
+        except:
+            pass
     ax.set_axis_off()
-    zoom_out(ax, 0.10)
+    zoom_out(ax, 0.05)
     add_north_arrow(ax)
-    # move further into corner
-    add_scale_bar(ax, position=(0.99, 0.02))
+    add_scale_bar(ax)
 
 # Save the maps figure
 maps_output = OUTPUTS_ROOT / 'retail_activity_maps.png'
-fig_maps.subplots_adjust(wspace=0.05)
+plt.tight_layout()
 plt.savefig(maps_output, dpi=300, bbox_inches='tight')
 print(f"SUCCESS: Maps saved to: {maps_output}")
 plt.close(fig_maps)
 
 # =========================================================================
-# --- 6. Correlation Performance Plot (Panel D) ---
+# --- 4. Plotting 1x3 Correlation Plots ---
 # =========================================================================
-print("Calculating validation performance statistics...")
-x_data = gdf_mapped['real_visits']
-y_data = gdf_mapped['sim_visits']
-n_centres = len(gdf_mapped)
-
-# Calculate statistical metrics on raw values
-r_val, r_pval = stats.pearsonr(x_data, y_data)
-rho_val, rho_pval = stats.spearmanr(x_data, y_data)
-rmse = np.sqrt(np.mean((y_data - x_data)**2))
-mae = np.mean(np.abs(y_data - x_data))
-
-# Determine what data to plot on the axes based on PLOT_RANKED config
-if PLOT_RANKED:
-    x_plot = gdf_mapped['real_visits'].rank()
-    y_plot = gdf_mapped['sim_visits'].rank()
-    x_label = 'Validation Data (Rank)'
-    y_label = 'Simulated Data (Rank)'
-    title_suffix = ' (Ranked)'
-else:
-    x_plot = gdf_mapped['real_visits']
-    y_plot = gdf_mapped['sim_visits']
-    x_label = 'Validation Data (Visits)'
-    y_label = 'Simulated Data (Visits)'
-    title_suffix = ' (Raw)'
+print("Generating 1x3 correlation plots...")
+fig_corr, (axc1, axc2, axc3) = plt.subplots(1, 3, figsize=(22, 6))
 
 df_plot = gdf_mapped.copy()
-df_plot['x_plot'] = x_plot
-df_plot['y_plot'] = y_plot
+df_plot['centre_typ'] = df_plot['centre_typ'].map({'centre': 'Centre', 'retail_park': 'Retail Park'}).fillna('Unknown')
+custom_palette = {'Centre': '#1f4e79', 'Retail Park': '#c2780e', 'Unknown': '#64748b'}
 
-# Clean labels for the legend
-df_plot['centre_typ'] = df_plot['centre_typ'].map({
-    'centre': 'Centre', 
-    'retail_park': 'Retail Park'
-}).fillna('Unknown')
+# --- PANEL 1: Footfall Correlation ---
+sns.scatterplot(data=df_plot, x='real_visits', y='sim_visits', hue='centre_typ', size='center_size',
+                sizes=(40, 400), palette=custom_palette, alpha=0.85, edgecolor='black', linewidth=0.8, ax=axc1, legend=False)
+sns.regplot(data=df_plot, x='real_visits', y='sim_visits', scatter=False, color='#d8527a', ax=axc1, line_kws={'linestyle': '--', 'linewidth': 2.0})
 
-# Styling options matching plot_results.py style rules
-custom_palette = {'Centre': '#3498db', 'Retail Park': '#e67e22', 'Unknown': '#7f8c8d'}
+r_f, p_f = stats.pearsonr(df_plot['real_visits'], df_plot['sim_visits'])
+rho_f, rp_f = stats.spearmanr(df_plot['real_visits'], df_plot['sim_visits'])
+rmse_f = np.sqrt(np.mean((df_plot['sim_visits'] - df_plot['real_visits'])**2))
 
-# =========================================================================
-# --- 6. Correlation Performance Plot (separate figure) ---
-# =========================================================================
-print("Generating separate correlation plot...")
+stats_f = f"Pearson r: {r_f:.3f} (p: {p_f:.2e})\nSpearman rho: {rho_f:.3f}\nRMSE: {rmse_f:.1f}"
+axc1.text(0.05, 0.95, stats_f, transform=axc1.transAxes, ha='left', va='top', fontsize=9.0, fontweight='bold',
+         bbox=dict(facecolor='white', alpha=0.9, edgecolor='#cccccc', boxstyle='round,pad=0.4'))
+axc1.set_title('8.1 Footfall Correlation (Visits)', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+axc1.set_xlabel('Observed Visits', fontweight='bold')
+axc1.set_ylabel('Simulated Visits', fontweight='bold')
 
-# Prepare plotting data
-x_data = gdf_mapped['real_visits']
-y_data = gdf_mapped['sim_visits']
-n_centres = len(gdf_mapped)
+# --- PANEL 2: Spend Rank Correlation ---
+# We compare Simulated Rank vs. Real Spend Rank
+sns.scatterplot(data=df_plot, x='Spend Rank', y='sim_rank', hue='centre_typ', size='center_size',
+                sizes=(40, 400), palette=custom_palette, alpha=0.85, edgecolor='black', linewidth=0.8, ax=axc2, legend=False)
+sns.regplot(data=df_plot, x='Spend Rank', y='sim_rank', scatter=False, color='#d8527a', ax=axc2, line_kws={'linestyle': '--', 'linewidth': 2.0})
 
-# Calculate statistics
-r_val, r_pval = stats.pearsonr(x_data, y_data)
-rho_val, rho_pval = stats.spearmanr(x_data, y_data)
-rmse = np.sqrt(np.mean((y_data - x_data)**2))
-mae = np.mean(np.abs(y_data - x_data))
+r_s, p_s = stats.pearsonr(df_plot['Spend Rank'], df_plot['sim_rank'])
+rho_s, rp_s = stats.spearmanr(df_plot['Spend Rank'], df_plot['sim_rank'])
 
-if PLOT_RANKED:
-    x_plot = gdf_mapped['real_visits'].rank()
-    y_plot = gdf_mapped['sim_visits'].rank()
-    x_label = 'Validation Data (Rank)'
-    y_label = 'Simulated Data (Rank)'
-    title_suffix = ' (Ranked)'
-else:
-    x_plot = gdf_mapped['real_visits']
-    y_plot = gdf_mapped['sim_visits']
-    x_label = 'Validation Data (Visits)'
-    y_label = 'Simulated Data (Visits)'
-    title_suffix = ' (Raw)'
+stats_s = f"Pearson r: {r_s:.3f} (p: {p_s:.2e})\nSpearman rho: {rho_s:.3f}"
+axc2.text(0.05, 0.95, stats_s, transform=axc2.transAxes, ha='left', va='top', fontsize=9.0, fontweight='bold',
+         bbox=dict(facecolor='white', alpha=0.9, edgecolor='#cccccc', boxstyle='round,pad=0.4'))
+axc2.set_title('8.2 Spend Rank Correlation', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+axc2.set_xlabel('Observed Spend Rank', fontweight='bold')
+axc2.set_ylabel('Simulated Visits Rank', fontweight='bold')
 
-df_plot = gdf_mapped.copy()
-df_plot['x_plot'] = x_plot
-df_plot['y_plot'] = y_plot
+# --- PANEL 3: Vacancy Rank Correlation ---
+# We compare Simulated Rank vs. Real Vacancy Rank
+sns.scatterplot(data=df_plot, x='Vacancy Rank', y='sim_rank', hue='centre_typ', size='center_size',
+                sizes=(40, 400), palette=custom_palette, alpha=0.85, edgecolor='black', linewidth=0.8, ax=axc3, legend=False)
+sns.regplot(data=df_plot, x='Vacancy Rank', y='sim_rank', scatter=False, color='#d8527a', ax=axc3, line_kws={'linestyle': '--', 'linewidth': 2.0})
 
-# Normalise centre type labels
-df_plot['centre_typ'] = df_plot['centre_typ'].map({
-    'centre': 'Centre',
-    'retail_park': 'Retail Park'
-}).fillna('Unknown')
+r_v, p_v = stats.pearsonr(df_plot['Vacancy Rank'], df_plot['sim_rank'])
+rho_v, rp_v = stats.spearmanr(df_plot['Vacancy Rank'], df_plot['sim_rank'])
 
-custom_palette = {'Centre': '#3498db', 'Retail Park': '#e67e22', 'Unknown': '#7f8c8d'}
+stats_v = f"Pearson r: {r_v:.3f} (p: {p_v:.2e})\nSpearman rho: {rho_v:.3f}"
+axc3.text(0.05, 0.95, stats_v, transform=axc3.transAxes, ha='left', va='top', fontsize=9.0, fontweight='bold',
+         bbox=dict(facecolor='white', alpha=0.9, edgecolor='#cccccc', boxstyle='round,pad=0.4'))
+axc3.set_title('8.3 Vacancy Rank Correlation', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+axc3.set_xlabel('Observed Vacancy Rank', fontweight='bold')
+axc3.set_ylabel('Simulated Visits Rank', fontweight='bold')
 
-# FIGURE 2: Correlation plot
-fig_corr, axc = plt.subplots(1, 1, figsize=(8, 6))
+# Global styling for correlation axes
+for ax in [axc1, axc2, axc3]:
+    ax.set_facecolor('#fafbfc')
+    ax.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+    ax.grid(True, axis='x', linestyle=':', alpha=0.7, color='#cbd5e1')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#94a3b8')
+    ax.spines['bottom'].set_color('#94a3b8')
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.tick_params(colors='#475569', width=1.0, labelsize=9)
+    ax.set_xlabel(ax.get_xlabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+    ax.set_ylabel(ax.get_ylabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
 
-sns.scatterplot(
-    data=df_plot,
-    x='x_plot',
-    y='y_plot',
-    hue='centre_typ',
-    size='center_size',
-    sizes=(40, 400),
-    palette=custom_palette,
-    alpha=0.85,
-    edgecolor='black',
-    linewidth=0.8,
-    ax=axc,
-    legend=False  # we'll add custom legends
-)
+# Legend setup (shared custom legend)
+reg_line = Line2D([0], [0], color='#d8527a', linestyle='--', linewidth=2.0)
+type_handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=color, markersize=8, label=label)
+                for label, color in custom_palette.items()]
+combined_handles = type_handles + [reg_line]
+combined_labels = list(custom_palette.keys()) + ['Fitted Regression']
+axc3.legend(combined_handles, combined_labels, frameon=True, framealpha=0.95, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='lower right', fontsize=9)
 
-# Regression line
-sns.regplot(
-    data=df_plot,
-    x='x_plot',
-    y='y_plot',
-    scatter=False,
-    color='#e74c3c',
-    ax=axc,
-    line_kws={'linestyle': '--', 'linewidth': 2.0}
-)
-
-axc.set_title(f'Correlation Performance{title_suffix}', fontweight='bold', fontsize=13, loc='left')
-axc.set_xlabel(x_label, fontweight='bold', fontsize=11)
-axc.set_ylabel(y_label, fontweight='bold', fontsize=11)
-axc.spines['top'].set_visible(False)
-axc.spines['right'].set_visible(False)
-axc.spines['left'].set_linewidth(1.2)
-axc.spines['bottom'].set_linewidth(1.2)
-axc.tick_params(width=1.2, labelsize=10)
-axc.grid(False)
-
-# Combined size and regression legend (bottom-right)
-size_vals = df_plot['center_size'].dropna()
-if len(size_vals) == 0:
-    size_vals = pd.Series([100])
-minv, maxv = size_vals.min(), size_vals.max()
-rep_values = [10, 50, 100]
-smin, smax = 40, 400
-def map_area(raw):
-    r = max(minv, min(maxv, raw)) if maxv > minv else raw
-    if maxv == minv:
-        return (smin + smax) / 2.0
-    return smin + (r - minv) / (maxv - minv) * (smax - smin)
-handles_size = [axc.scatter([], [], s=map_area(v), color='gray', edgecolor='black') for v in rep_values]
-labels_size = [f'{v}' for v in rep_values]
-
-# Regression line handle
-reg_line = Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=2.0)
-
-# Combine both into a single legend in bottom-right corner
-combined_handles = handles_size + [reg_line]
-combined_labels = labels_size + ['Fitted Regression']
-leg_combined = axc.legend(combined_handles, combined_labels, title='Centre size (POIs)', 
-                          frameon=True, framealpha=0.95, loc='lower right', fontsize='medium')
-
-# Performance textbox
-stats_text = (
-    f"Pearson r: {r_val:.3f} (p: {r_pval:.2e})\n"
-    f"Spearman rho: {rho_val:.3f} (p: {rho_pval:.2e})\n"
-    f"RMSE: {rmse:.1f}\n"
-    f"MAE: {mae:.1f}\n"
-    f"Centres (n): {n_centres}"
-)
-axc.text(0.05, 0.95, stats_text, transform=axc.transAxes, ha='left', va='top', fontsize=9.0, fontweight='bold',
-         bbox=dict(facecolor='white', alpha=0.8, edgecolor='#cccccc', boxstyle='round,pad=0.4'))
+plt.tight_layout()
 
 # Save correlation figure
 corr_output = OUTPUTS_ROOT / 'retail_activity_correlation.png'
-plt.tight_layout()
 plt.savefig(corr_output, dpi=300, bbox_inches='tight')
 print(f"SUCCESS: Correlation plot saved to: {corr_output}")
 plt.close(fig_corr)
-

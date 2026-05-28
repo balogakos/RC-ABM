@@ -24,6 +24,7 @@ class RetailManager:
         # Performance state
         self.underperformer_tracker = {}
         self.cumulative_boosts = {}
+        self.death_spirals = {}  # Track permanent decline/death spiral state
 
     def evaluate_centres(self, visits_df, utility_matrices):
         """
@@ -34,10 +35,10 @@ class RetailManager:
             visits_df, self.retail_gdf, self.amenity_binary
         )
         
-        # 2. Apply interventions
+        # 2. Apply interventions (including death spiral logic)
         messages = intervention_system.apply_intervention_policy(
             failed, participating, utility_matrices, 
-            self.underperformer_tracker, self.cumulative_boosts
+            self.underperformer_tracker, self.cumulative_boosts, self.death_spirals
         )
         
         return messages

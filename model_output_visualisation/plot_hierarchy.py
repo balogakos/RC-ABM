@@ -45,37 +45,42 @@ cum_prop_centres = np.arange(1, num_centres + 1) / num_centres
 cum_prop_visits = df_sorted_asc['Total_Visits'].cumsum().values / total_visits
 
 # --- Plotting (1x2 Grid, 2 Panels) ---
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5.5))
 
 # --- PANEL A: Retail centre rank by simulated visits ---
-line1, = ax1.plot(ranks, visits_by_rank, linewidth=2, color='#1f77b4', label='Simulated Visits')
-ax1.set_title('Retail centre rank by simulated visits', fontweight='bold', loc='left', pad=15)
+line1, = ax1.plot(ranks, visits_by_rank, linewidth=2.5, color='#1f4e79', label='Simulated Visits')
+ax1.set_title('4.1 Retail Centre Rank by Simulated Visits', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 ax1.set_xlabel('Rank')
 ax1.set_ylabel('Simulated Visits')
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
-ax1.spines['left'].set_linewidth(1.2)
-ax1.spines['bottom'].set_linewidth(1.2)
-ax1.tick_params(width=1.2)
-ax1.grid(False)
-ax1.legend(frameon=False, loc='upper left', bbox_to_anchor=(1.02, 1))
+ax1.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=9)
 
 # --- PANEL B: Cumulative proportion of retail centres ---
-line2, = ax2.plot(cum_prop_centres, cum_prop_visits, linewidth=2, color='#2ca02c', label='Model Lorenz Curve')
-line3, = ax2.plot([0, 1], [0, 1], linewidth=1.5, color='#7f7f7f', linestyle='--', label='Line of Equality')
-ax2.set_title('Cumulative proportion of retail centres', fontweight='bold', loc='left', pad=15)
-ax2.set_xlabel('Cumulative proportion of retail centres')
-ax2.set_ylabel('Cumulative proportion of total visits')
+line2, = ax2.plot(cum_prop_centres, cum_prop_visits, linewidth=2.5, color='#2d6a4f', label='Model Lorenz Curve')
+line3, = ax2.plot([0, 1], [0, 1], linewidth=1.5, color='#64748b', linestyle='--', label='Line of Equality')
+ax2.set_title('4.2 Cumulative Proportion of Retail Centres', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax2.set_xlabel('Cumulative Proportion of Retail Centres')
+ax2.set_ylabel('Cumulative Proportion of Total Visits')
 ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
-ax2.spines['left'].set_linewidth(1.2)
-ax2.spines['bottom'].set_linewidth(1.2)
-ax2.tick_params(width=1.2)
-ax2.grid(False)
-ax2.legend(frameon=False, loc='upper left', bbox_to_anchor=(1.02, 1))
+ax2.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=9)
 
-# Set overall title on figure matching requested title exactly
-fig.suptitle('Emergent Retail Heirarchy', fontsize=14, fontweight='bold', y=0.98)
+# Global styling enhancements for both axes
+for ax in [ax1, ax2]:
+    ax.set_facecolor('#fafbfc')
+    ax.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+    ax.grid(False, axis='x')
+    ax.spines['left'].set_color('#94a3b8')
+    ax.spines['bottom'].set_color('#94a3b8')
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.tick_params(colors='#475569', width=1.0, labelsize=9)
+    ax.set_xlabel(ax.get_xlabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+    ax.set_ylabel(ax.get_ylabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+
+
+
 
 plt.tight_layout()
 
@@ -83,4 +88,4 @@ plt.tight_layout()
 output_img = OUTPUTS_ROOT / "emergent_retail_hierarchy.png"
 plt.savefig(output_img, dpi=300, bbox_inches='tight')
 print(f"Emergent Retail Hierarchy visualization saved to: {output_img}")
-plt.show()
+# plt.show()

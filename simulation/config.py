@@ -139,9 +139,17 @@ RETAIL_INTERVENTION    = 1.0
 # --- Temporal Variability ---
 # Controls the random daily fluctuation in trip probabilities per category (standard deviation)
 PROBABILITY_VARIANCE = {
-    'comparison': 0.15,
-    'entertainment': 0.15,
-    'food_drink': 0.15,
-    'grocery': 0.15,
-    'service': 0.15
+    'comparison': 0.0,
+    'entertainment': 0.0,
+    'food_drink': 0.0,
+    'grocery': 0.0,
+    'service': 0.0
 }
+
+# --- Intervention Success Probability ---
+# Probability of town centre rescue success, calibrated to the 85/15 split (Dolega et al., 2026)
+INTERVENTION_SUCCESS_PROBABILITY = 0.15
+
+# --- Death Spiral Decline Velocity ---
+# Compounding utility penalty of -3.5% per evaluation period for centres in permanent decline
+RETAIL_DECLINE_PENALTY = 0.965

@@ -117,7 +117,7 @@ df_validation = df_validation.rename(columns={'Retail_Centre': 'Retail Centre No
 df_validation = df_validation.sort_values(by='Simulated Rank').reset_index(drop=True)
 
 # Select and order columns as requested
-rank_table_path = REPORTS_DIR / '08_retail_rank_validation_table.csv'
+rank_table_path = REPORTS_DIR / '09_retail_rank_validation_table.csv'
 df_validation.to_csv(rank_table_path, index=False)
 print(f"Compiled and saved rank validation table to: {rank_table_path}")
 print("Preview of Top 10 Centres in Rank Validation Table:")
@@ -132,11 +132,11 @@ print("Step 4: Executing individual plotting scripts...")
 plotting_scripts = [
     ('plot_results.py', "1. Simulation Convergence & Stabilisation"),
     ('plot_hierarchy.py', "2. Emergent Retail Hierarchy"),
-    ('plot_map.py', "3. Spatial Activity Maps & Correlation"),
-    ('plot_lisa.py', "4. LISA Cluster Comparison"),
-    ('plot_diffusion_comparison.py', "5. Behavioral Diffusion ON/OFF comparison"),
-    ('plot_adaptive_cycle.py', "6. Adaptive Performance Cycle Tracking"),
-    ('plot_boosts.py', "7. Attractiveness Trajectories of Affected & Boosted Centres")
+    ('plot_micro_validation.py', "3a. Micro-Level Performance Profile Validation"),
+    ('plot_micro_validation_spatial.py', "3b. Micro-Level Spatial Performance Comparison"),
+    ('plot_map.py', "4. Spatial Activity Maps & Correlation"),
+    ('plot_lisa.py', "5. LISA Cluster Comparison"),
+    ('plot_diffusion_comparison.py', "6. Behavioral Diffusion ON/OFF comparison")
 ]
 
 for script_name, description in plotting_scripts:
@@ -167,23 +167,23 @@ print("Step 5: Collecting and organizing outputs in reports folder...")
 output_mappings = [
     ('stability_metrics_visualization_latest.png', '01_stability_metrics_visualization_latest.png'),
     ('emergent_retail_hierarchy.png', '02_emergent_retail_hierarchy.png'),
-    ('retail_activity_maps.png', '03_retail_activity_maps.png'),
-    ('retail_activity_correlation.png', '04_retail_activity_correlation.png'),
-    ('lisa_diffusion_comparison.png', '05_lisa_diffusion_comparison.png'),
-    ('diffusion_accuracy_comparison.png', '06_diffusion_accuracy_comparison.png'),
-    ('adaptive_performance_cycle.png', '07_adaptive_performance_cycle.png'),
-    ('09_boosted_centres_trajectories.png', '09_boosted_centres_trajectories.png')
+    ('micro_validation_metrics.png', '03_micro_validation_metrics.png'),
+    ('micro_validation_spatial.png', '04_micro_validation_spatial.png'),
+    ('retail_activity_maps.png', '05_retail_activity_maps.png'),
+    ('retail_activity_correlation.png', '06_retail_activity_correlation.png'),
+    ('lisa_diffusion_comparison.png', '07_lisa_diffusion_comparison.png'),
+    ('diffusion_accuracy_comparison.png', '08_diffusion_accuracy_comparison.png')
 ]
 
 for src_name, dest_name in output_mappings:
     src_path = OUTPUTS_ROOT / src_name
     
-    # Handle both average and latest modes for the convergence chart
-    if src_name == 'stability_metrics_visualization_latest.png':
-        avg_path = OUTPUTS_ROOT / 'stability_metrics_visualization_average.png'
-        if avg_path.exists():
-            src_path = avg_path
-        
+    # Always use the latest stability metrics (not average)
+    # if src_name == 'stability_metrics_visualization_latest.png':
+    #     avg_path = OUTPUTS_ROOT / 'stability_metrics_visualization_average.png'
+    #     if avg_path.exists():
+    #         src_path = avg_path
+    
     dest_path = REPORTS_DIR / dest_name
     
     if src_path.exists():

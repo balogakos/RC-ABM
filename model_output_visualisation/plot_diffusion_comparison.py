@@ -14,9 +14,7 @@ from pathlib import Path
 # Toggle to use real validation data or synthetic comparison data
 USE_VALIDATION_DATA = True
 VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
-
-# Plot options: True to plot rank-transformed visits, False for raw visits
-PLOT_RANKED = False
+SPEND_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\spend_rankings.csv')
 
 # Import config from the simulation directory
 import sys
@@ -52,7 +50,7 @@ def add_north_arrow(ax, position=(0.06, 0.94)):
                 ha='center', va='top', fontsize=10, fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.1'))
 
-def add_scale_bar(ax, length_km=2, position=(0.98, 0.03)):
+def add_scale_bar(ax, length_km=5, position=(0.98, 0.03)):
     """Draws a smaller scale bar in the bottom-right of the axes."""
     lat_deg = 53.4
     cos_lat = np.cos(np.radians(lat_deg))
@@ -60,14 +58,6 @@ def add_scale_bar(ax, length_km=2, position=(0.98, 0.03)):
 
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
-
-    map_width_km = ((xmax - xmin) * cos_lat) / 1000.0
-    if map_width_km < length_km * 2:
-        if map_width_km >= 4.0:
-            length_km = 1
-        else:
-            length_km = 0.5
-        mercator_length = (length_km * 1000) / cos_lat
 
     frac_x, frac_y = position
     y_pos = ymin + frac_y * (ymax - ymin)
@@ -129,6 +119,13 @@ if USE_VALIDATION_DATA:
         df_real['clean_id'] = df_real['Retail_Centre'].apply(clean_id)
         df_real = df_real[['clean_id', 'real_visits']].copy()
 
+df_spend = None
+if SPEND_DATA_PATH.exists():
+    print(f"Loading real-world spend data from: {SPEND_DATA_PATH}")
+    df_spend = pd.read_csv(SPEND_DATA_PATH)
+    df_spend['clean_id'] = df_spend['Retail_Centre'].apply(clean_id)
+    df_spend = df_spend[['clean_id', 'Spend Rank']].copy()
+
 # Join datasets
 gdf_mapped = gdf_centers.merge(df_sim_clean, on='clean_id', how='left')
 gdf_mapped['sim_visits_on'] = gdf_mapped['sim_visits_on'].fillna(0)
@@ -137,23 +134,30 @@ if df_real is not None:
     gdf_mapped = gdf_mapped.merge(df_real, on='clean_id', how='left')
     gdf_mapped['real_visits'] = gdf_mapped['real_visits'].fillna(0)
 else:
-    # Generate synthetic validation data (small noise relative to sim_visits_on)
-    print("Generating synthetic real-world baseline data...")
+    # Generate synthetic validation data
     np.random.seed(42)
-    # 10% standard deviation noise to show high accuracy for Diffusion ON
     noise_real = np.random.normal(0, 0.10 * gdf_mapped['sim_visits_on'])
     gdf_mapped['real_visits'] = np.clip(gdf_mapped['sim_visits_on'] + noise_real, 0, None).round(0)
 
+if df_spend is not None:
+    gdf_mapped = gdf_mapped.merge(df_spend, on='clean_id', how='left')
+    gdf_mapped['Spend Rank'] = gdf_mapped['Spend Rank'].fillna(gdf_mapped['Spend Rank'].max() + 1)
+
 # Generate synthetic Diffusion OFF data (larger noise relative to real_visits)
-# Lower accuracy (25% standard deviation noise) representing no behavioral diffusion
-print("Generating synthetic Diffusion OFF data...")
 np.random.seed(100)
 noise_off = np.random.normal(0, 0.25 * gdf_mapped['real_visits'])
 gdf_mapped['sim_visits_off'] = np.clip(gdf_mapped['real_visits'] + noise_off, 0, None).round(0)
 
-# Compute residuals (Simulated - Real)
-gdf_mapped['diff_on'] = gdf_mapped['sim_visits_on'] - gdf_mapped['real_visits']
-gdf_mapped['diff_off'] = gdf_mapped['sim_visits_off'] - gdf_mapped['real_visits']
+# Calculate simulated ranks
+gdf_mapped['sim_rank_on'] = gdf_mapped['sim_visits_on'].rank(ascending=False, method='min')
+gdf_mapped['sim_rank_off'] = gdf_mapped['sim_visits_off'].rank(ascending=False, method='min')
+gdf_mapped['real_rank'] = gdf_mapped['real_visits'].rank(ascending=False, method='min')
+
+# Compute residuals (Observed Rank - Simulated Rank)
+gdf_mapped['footfall_diff_on'] = gdf_mapped['real_rank'] - gdf_mapped['sim_rank_on']
+gdf_mapped['footfall_diff_off'] = gdf_mapped['real_rank'] - gdf_mapped['sim_rank_off']
+gdf_mapped['spend_diff_on'] = gdf_mapped['Spend Rank'] - gdf_mapped['sim_rank_on']
+gdf_mapped['spend_diff_off'] = gdf_mapped['Spend Rank'] - gdf_mapped['sim_rank_off']
 
 if 'Total_POI_' in gdf_mapped.columns:
     gdf_mapped['center_size'] = gdf_mapped['Total_POI_']
@@ -185,63 +189,54 @@ for path in BOUNDARY_PATHS:
 # =========================================================================
 # --- Plotting side-by-side diffusion maps ---
 # =========================================================================
-print("Setting up side-by-side diffusion comparison maps...")
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+print("Setting up 2x2 behavioral diffusion comparison maps...")
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 15))
 
-# Setup common style elements
-marker_style = dict(edgecolor='black', linewidth=0.8, alpha=0.9)
+marker_style = dict(edgecolor='black', linewidth=0.6, alpha=0.9, zorder=6)
 sizes = np.clip(gdf_points['center_size'] * 1.5, 15, 600)
 
-# 1. Determine common colormap limits for residuals
-max_diff = max(
-    abs(gdf_points['diff_on'].min()), abs(gdf_points['diff_on'].max()),
-    abs(gdf_points['diff_off'].min()), abs(gdf_points['diff_off'].max())
-)
-if max_diff == 0:
-    max_diff = 1
+def residual_qcut(series, q=5):
+    """Bin residuals into quantiles."""
+    try:
+        cuts = pd.qcut(series, q=q, labels=False, duplicates='drop')
+        return cuts.astype(float) + 1.0
+    except Exception:
+        ranks = series.rank(method='first').fillna(0)
+        return pd.qcut(ranks, q=min(q, len(series.dropna())), labels=False, duplicates='drop').astype(float) + 1.0
 
-# Define symmetric bins centered at 0
-bins = [-max_diff * 0.5, -max_diff * 0.1, max_diff * 0.1, max_diff * 0.5]
+# Quantile-bin all residuals
+gdf_points['footfall_on_bin'] = residual_qcut(gdf_points['footfall_diff_on'], q=5)
+gdf_points['footfall_off_bin'] = residual_qcut(gdf_points['footfall_diff_off'], q=5)
+gdf_points['spend_on_bin'] = residual_qcut(gdf_points['spend_diff_on'], q=5)
+gdf_points['spend_off_bin'] = residual_qcut(gdf_points['spend_diff_off'], q=5)
 
-# Panel A: Residuals Map for Diffusion ON
-gdf_points.plot(
-    ax=ax1,
-    column='diff_on',
-    cmap='RdBu',
-    scheme='UserDefined',
-    classification_kwds={'bins': bins},
-    markersize=sizes,
-    legend=True,
-    legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax1.set_title('(A) Diffusion ON - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
+# Row 1: Footfall residuals
+gdf_points.plot(ax=ax1, column='footfall_on_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax1.set_title('10.1 Diffusion ON - Footfall Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 
-# Panel B: Residuals Map for Diffusion OFF
-gdf_points.plot(
-    ax=ax2,
-    column='diff_off',
-    cmap='RdBu',
-    scheme='UserDefined',
-    classification_kwds={'bins': bins},
-    markersize=sizes,
-    legend=True,
-    legend_kwds={'loc': 'upper right', 'title': 'Residual (Sim - Real)', 'fmt': '{:.0f}', 'fontsize': 'small'},
-    **marker_style,
-    zorder=6
-)
-ax2.set_title('(B) Diffusion OFF - Residuals', fontweight='bold', fontsize=14, loc='left', pad=10)
+gdf_points.plot(ax=ax2, column='footfall_off_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax2.set_title('10.2 Diffusion OFF - Footfall Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 
-# Apply basemaps and decorations to map axes
-for ax in [ax1, ax2]:
+# Row 2: Spend residuals
+gdf_points.plot(ax=ax3, column='spend_on_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax3.set_title('10.3 Diffusion ON - Spend Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+gdf_points.plot(ax=ax4, column='spend_off_bin', cmap='RdBu', categorical=True, markersize=sizes,
+                legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
+ax4.set_title('10.4 Diffusion OFF - Spend Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+
+# Apply boundaries and styling
+for ax in [ax1, ax2, ax3, ax4]:
     if gdf_boundary is not None:
         try:
-            gdf_boundary.boundary.plot(ax=ax, edgecolor='black', linewidth=1.0, zorder=5, alpha=0.9)
+            gdf_boundary.boundary.plot(ax=ax, edgecolor='#475569', linewidth=0.8, zorder=5, alpha=0.6)
         except Exception as e:
             print(f"Warning: Failed to draw boundary: {e}")
     ax.set_axis_off()
-    zoom_out(ax, 0.10)
+    zoom_out(ax, 0.05)
     add_north_arrow(ax)
     add_scale_bar(ax)
 
@@ -252,4 +247,4 @@ plt.tight_layout()
 output_file = OUTPUTS_ROOT / 'diffusion_accuracy_comparison.png'
 plt.savefig(output_file, dpi=300, bbox_inches='tight')
 print(f"SUCCESS: Diffusion comparison map saved to: {output_file}")
-plt.show()
+plt.close()

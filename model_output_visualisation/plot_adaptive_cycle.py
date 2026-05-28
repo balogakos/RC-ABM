@@ -71,7 +71,7 @@ print(f"Selected top {num_to_select} retail centres on final day: {top_centres}"
 # =========================================================================
 # --- 3. Plotting ---
 # =========================================================================
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
 # Generate high-contrast, distinct color palette for the tracked paths
 colormap = plt.cm.tab20
@@ -113,12 +113,12 @@ for day in eval_days:
 strike_handle = Line2D([0], [0], color='#e74c3c', linestyle='--', linewidth=1.2, alpha=0.7, label='Evaluation Strike')
 
 # Setup Panel A styling
-ax1.set_title("Attractiveness Utility Evolution ($U_t$)", fontweight='bold', loc='left', pad=10)
+ax1.set_title("Attractiveness Utility Evolution ($U_t$)", fontweight='bold', loc='left', pad=12)
 ax1.set_xlabel("Day")
 ax1.set_ylabel("Attractiveness Utility")
 
 # Setup Panel B styling
-ax2.set_title("Relative Hierarchy Rank Position", fontweight='bold', loc='left', pad=10)
+ax2.set_title("Relative Hierarchy Rank Position", fontweight='bold', loc='left', pad=12)
 ax2.set_xlabel("Day")
 ax2.set_ylabel("Relative Rank Position")
 
@@ -126,20 +126,33 @@ ax2.set_ylabel("Relative Rank Position")
 for ax in [ax1, ax2]:
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(1.2)
-    ax.spines['bottom'].set_linewidth(1.2)
-    ax.tick_params(width=1.2)
-    ax.grid(False)
+    ax.set_facecolor('#fafbfc')
+    ax.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+    ax.grid(False, axis='x')
+    ax.spines['left'].set_color('#94a3b8')
+    ax.spines['bottom'].set_color('#94a3b8')
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.tick_params(colors='#475569', width=1.0, labelsize=9)
+    ax.set_xlabel(ax.get_xlabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+    ax.set_ylabel(ax.get_ylabel(), fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax.title.set_color('#1e293b')
+    ax.title.set_fontsize(12)
 
 # Add legends with the evaluation strike included
 handles1, labels1 = ax1.get_legend_handles_labels()
-handles1.append(strike_handle)
-ax1.legend(handles=handles1, frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
+# Avoid duplicate handles by filtering
+if strike_handle.get_label() not in labels1:
+    handles1.append(strike_handle)
+ax1.legend(handles=handles1, frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=8, ncol=1)
 
 handles2, labels2 = ax2.get_legend_handles_labels()
-handles2.append(strike_handle)
-ax2.legend(handles=handles2, frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
+if strike_handle.get_label() not in labels2:
+    handles2.append(strike_handle)
+ax2.legend(handles=handles2, frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=8, ncol=1)
 
+fig.suptitle('Adaptive Retail Centre Performance Tracking', fontsize=14, fontweight='bold', y=0.98, color='#1e293b')
 plt.tight_layout()
 
 # Save final visualization

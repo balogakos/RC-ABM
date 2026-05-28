@@ -12,7 +12,7 @@ from pathlib import Path
 # 'latest'  : Plots only the single most recent simulation run (no SD shading, clean lines).
 # 'average' : Plots the average of all runs found in the subfolders.
 #             If > 1 run is found, standard deviations are shown as shaded alpha backgrounds.
-PLOT_MODE = 'average'  
+PLOT_MODE = 'latest'  
 
 # Root paths for outputs (updated subdirectory structure)
 OUTPUTS_ROOT = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\outputs')
@@ -96,157 +96,73 @@ agg_conv.columns = [f'{col}_{stat}' for col, stat in agg_conv.columns]
 df_conv = agg_conv.reset_index()
 
 # =========================================================================
-# --- 2. Plotting (2x2 Grid, 4 Panels) ---
+# --- 2. Plotting (1x2 Grid, Premium Aesthetics) ---
 # =========================================================================
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 9))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5.5))
+
+# Premium color palette for retail types
+category_colors = {
+    'comparison': '#1f4e79',      # Muted steel blue
+    'entertainment': '#c2780e',   # Warm bronze
+    'food_drink': '#a23b5f',      # Muted burgundy/rose
+    'grocery': '#2d6a4f',         # Forest green
+    'service': '#5b3a7d'          # Muted plum/purple
+}
 
 # --- PANEL 1: Daily Visits by Retail Type ---
 for col in retail_types:
     legend_name = col.replace('_', ' ').title()
-    line, = ax1.plot(df_daily['Day'], df_daily[f'{col}_mean'], linewidth=2, label=legend_name)
+    color = category_colors.get(col, '#7f8c8d')
+    line, = ax1.plot(df_daily['Day'], df_daily[f'{col}_mean'], linewidth=2.5, color=color, label=legend_name)
     
     # Shade SD only if we have more than 1 run
     if num_daily_runs > 1:
-        color = line.get_color()
         lower = df_daily[f'{col}_mean'] - df_daily[f'{col}_std'].fillna(0.0)
         upper = df_daily[f'{col}_mean'] + df_daily[f'{col}_std'].fillna(0.0)
-        ax1.fill_between(df_daily['Day'], lower, upper, color=color, alpha=0.25)
+        ax1.fill_between(df_daily['Day'], lower, upper, color=color, alpha=0.15)
 
-ax1.set_title('Daily Visits by Retail Type', fontweight='bold', loc='left', pad=10)
+ax1.set_title('3.1 Daily Visits by Retail Type', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 ax1.set_xlabel('Day')
 ax1.set_ylabel('Number of Visits')
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
-ax1.spines['left'].set_linewidth(1.2)
-ax1.spines['bottom'].set_linewidth(1.2)
-ax1.tick_params(width=1.2)
-ax1.legend(frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
-ax1.grid(False)
+ax1.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=9)
 
 # --- PANEL 2: Total Daily Visits ---
-line, = ax2.plot(df_daily['Day'], df_daily['Total_Visits_mean'], linewidth=2, color='#111111', label='Total Visits')
+total_color = '#2c3e50'  # Deep slate gray/blue
+line, = ax2.plot(df_daily['Day'], df_daily['Total_Visits_mean'], linewidth=3, color=total_color, label='Total Visits')
 
 # Shade SD only if we have more than 1 run
 if num_daily_runs > 1:
-    color = line.get_color()
     lower_total = df_daily['Total_Visits_mean'] - df_daily['Total_Visits_std'].fillna(0.0)
     upper_total = df_daily['Total_Visits_mean'] + df_daily['Total_Visits_std'].fillna(0.0)
-    ax2.fill_between(df_daily['Day'], lower_total, upper_total, color=color, alpha=0.25)
+    ax2.fill_between(df_daily['Day'], lower_total, upper_total, color=total_color, alpha=0.15)
 
-ax2.set_title('Total Daily Visits', fontweight='bold', loc='left', pad=10)
+ax2.set_title('3.2 Total Daily Visits', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
 ax2.set_xlabel('Day')
 ax2.set_ylabel('Total Visits')
 ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
-ax2.spines['left'].set_linewidth(1.2)
-ax2.spines['bottom'].set_linewidth(1.2)
-ax2.tick_params(width=1.2)
-ax2.legend(frameon=True, framealpha=0.8, loc='best', fontsize=9)
-ax2.grid(False)
+ax2.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
 
-# --- PANEL 3: Utility Convergence (with twin y-axis) ---
-if 'JSD_mean' in df_conv.columns:
-    # JSD (Left y-axis)
-    color_jsd = '#1f77b4'
-    line1, = ax3.plot(df_conv['Day'], df_conv['JSD_mean'], linewidth=2, color=color_jsd, label='JSD')
+# Global styling enhancements for both axes
+for ax in [ax1, ax2]:
+    ax.set_facecolor('#fafbfc')
+    ax.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+    ax.grid(False, axis='x')
+    ax.spines['left'].set_color('#94a3b8')
+    ax.spines['bottom'].set_color('#94a3b8')
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.tick_params(colors='#475569', width=1.0, labelsize=9)
+    ax.set_xlabel('Day', fontweight='bold', color='#334155', fontsize=10, labelpad=8)
+    ax.yaxis.label.set_color('#334155')
+    ax.yaxis.label.set_fontweight('bold')
+    ax.yaxis.label.set_fontsize(10)
+
     
-    # Shade SD only if we have more than 1 run
-    if num_conv_runs > 1:
-        lower_jsd = df_conv['JSD_mean'] - df_conv['JSD_std'].fillna(0.0)
-        upper_jsd = df_conv['JSD_mean'] + df_conv['JSD_std'].fillna(0.0)
-        ax3.fill_between(df_conv['Day'], lower_jsd, upper_jsd, color=color_jsd, alpha=0.25)
-    
-    ax3.set_ylabel('Jensen-Shannon Divergence (JSD)', color='#111111', fontweight='bold', fontsize=9)
-    ax3.tick_params(axis='y', labelcolor='#111111', width=1.2)
-    ax3.spines['left'].set_color('#111111')
-    ax3.spines['left'].set_linewidth(1.2)
-
-    # KS Distance (Right y-axis sharing same x-axis)
-    ax3_twin = ax3.twinx()
-    color_ks = '#ff7f0e'
-    line2, = ax3_twin.plot(df_conv['Day'], df_conv['KS_Distance_mean'], linewidth=2, color=color_ks, linestyle='--', label='KS Dist')
-    
-    # Shade SD only if we have more than 1 run
-    if num_conv_runs > 1:
-        lower_ks = df_conv['KS_Distance_mean'] - df_conv['KS_Distance_std'].fillna(0.0)
-        upper_ks = df_conv['KS_Distance_mean'] + df_conv['KS_Distance_std'].fillna(0.0)
-        ax3_twin.fill_between(df_conv['Day'], lower_ks, upper_ks, color=color_ks, alpha=0.25)
-    
-    ax3_twin.set_ylabel('Kolmogorov-Smirnov (KS) Distance', color='#111111', fontweight='bold', fontsize=9)
-    ax3_twin.tick_params(axis='y', labelcolor='#111111', width=1.2)
-    ax3_twin.spines['right'].set_color('#111111')
-    ax3_twin.spines['right'].set_linewidth(1.2)
-    ax3_twin.spines['right'].set_visible(True)
-    ax3_twin.spines['top'].set_visible(False)
-    ax3_twin.spines['left'].set_visible(False)
-    ax3_twin.grid(False)
-
-    # Clean up primary axes spines
-    ax3.spines['top'].set_visible(False)
-    ax3.spines['right'].set_visible(False)
-    ax3.spines['bottom'].set_linewidth(1.2)
-    ax3.tick_params(axis='x', width=1.2)
-    ax3.grid(False)
-    
-    # Combined legend inside
-    lines = [line1, line2]
-    labels = [l.get_label() for l in lines]
-    ax3.legend(lines, labels, frameon=True, framealpha=0.8, loc='best', fontsize=9)
-    
-    # Force integer labels on X-axis (days)
-    ax3.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-
-ax3.set_title('Utility Convergence', fontweight='bold', loc='left', pad=10)
-ax3.set_xlabel('Day')
-
-# --- PANEL 4: Retail Hierarchy Rank Stability ---
-if 'Spearman_Cum_Day_to_Day_mean' in df_conv.columns:
-    # Cumulative Day-to-Day
-    line_c1, = ax4.plot(df_conv['Day'], df_conv['Spearman_Cum_Day_to_Day_mean'], linewidth=2.5, color='#2ca02c', label='Cumulative Size (D2D)')
-    if num_conv_runs > 1:
-        color_c1 = line_c1.get_color()
-        l_c1 = df_conv['Spearman_Cum_Day_to_Day_mean'] - df_conv['Spearman_Cum_Day_to_Day_std'].fillna(0.0)
-        u_c1 = df_conv['Spearman_Cum_Day_to_Day_mean'] + df_conv['Spearman_Cum_Day_to_Day_std'].fillna(0.0)
-        ax4.fill_between(df_conv['Day'], l_c1, u_c1, color=color_c1, alpha=0.2)
-    
-    # Cumulative Anchor to Final
-    line_c2, = ax4.plot(df_conv['Day'], df_conv['Spearman_Cum_Final_Anchor_mean'], linewidth=2.5, color='#d62728', linestyle=':', label='Cumulative Size (Final)')
-    if num_conv_runs > 1:
-        color_c2 = line_c2.get_color()
-        l_c2 = df_conv['Spearman_Cum_Final_Anchor_mean'] - df_conv['Spearman_Cum_Final_Anchor_std'].fillna(0.0)
-        u_c2 = df_conv['Spearman_Cum_Final_Anchor_mean'] + df_conv['Spearman_Cum_Final_Anchor_std'].fillna(0.0)
-        ax4.fill_between(df_conv['Day'], l_c2, u_c2, color=color_c2, alpha=0.2)
-
-    # Daily Day-to-Day
-    line_d1, = ax4.plot(df_conv['Day'], df_conv['Spearman_Daily_Day_to_Day_mean'], linewidth=1.5, color='#9467bd', alpha=0.6, label='Daily (D2D)')
-    if num_conv_runs > 1:
-        color_d1 = line_d1.get_color()
-        l_d1 = df_conv['Spearman_Daily_Day_to_Day_mean'] - df_conv['Spearman_Daily_Day_to_Day_std'].fillna(0.0)
-        u_d1 = df_conv['Spearman_Daily_Day_to_Day_mean'] + df_conv['Spearman_Daily_Day_to_Day_std'].fillna(0.0)
-        ax4.fill_between(df_conv['Day'], l_d1, u_d1, color=color_d1, alpha=0.1)
-
-    # Daily Anchor to Final
-    line_d2, = ax4.plot(df_conv['Day'], df_conv['Spearman_Daily_Final_Anchor_mean'], linewidth=1.5, color='#8c564b', alpha=0.6, linestyle=':', label='Daily (Final)')
-    if num_conv_runs > 1:
-        color_d2 = line_d2.get_color()
-        l_d2 = df_conv['Spearman_Daily_Final_Anchor_mean'] - df_conv['Spearman_Daily_Final_Anchor_std'].fillna(0.0)
-        u_d2 = df_conv['Spearman_Daily_Final_Anchor_mean'] + df_conv['Spearman_Daily_Final_Anchor_std'].fillna(0.0)
-        ax4.fill_between(df_conv['Day'], l_d2, u_d2, color=color_d2, alpha=0.1)
-
-    # Force integer labels on X-axis (days)
-    ax4.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-
-ax4.set_title('Retail Hierarchy Rank Stability', fontweight='bold', loc='left', pad=10)
-ax4.set_xlabel('Day')
-ax4.set_ylabel('Spearman Rank Correlation (ρ)')
-ax4.set_ylim(-0.1, 1.05)
-ax4.spines['top'].set_visible(False)
-ax4.spines['right'].set_visible(False)
-ax4.spines['left'].set_linewidth(1.2)
-ax4.spines['bottom'].set_linewidth(1.2)
-ax4.tick_params(width=1.2)
-ax4.legend(frameon=True, framealpha=0.8, loc='best', fontsize=8, ncol=2)
-ax4.grid(False)
+    # Force integer ticks on X-axis (days)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
 plt.tight_layout()
 
@@ -254,4 +170,4 @@ plt.tight_layout()
 output_img = OUTPUTS_ROOT / f"stability_metrics_visualization_{PLOT_MODE}.png"
 plt.savefig(output_img, dpi=300, bbox_inches='tight')
 print(f"Visualization saved to: {output_img}")
-plt.show()
+# plt.show()

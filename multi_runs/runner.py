@@ -23,10 +23,10 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Ensemble Configuration ---
-NUM_RUNS    = 5      # Number of iterations to average out uncertainty
-DAYS        = 90
-EVAL_FREQ   = 15
-SAMPLE_SIZE = 131363   # 20% of 656817 agents to speed up execution and save memory
+NUM_RUNS    = 3     # Number of iterations to average out uncertainty
+DAYS        = 60
+EVAL_FREQ   = 10
+SAMPLE_SIZE = 60000   # Number of agents to sample randomly from the full dataset (set to None for all agents)
 
 def _clean_rc_id(x):
     s = str(x)
