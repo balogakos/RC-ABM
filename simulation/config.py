@@ -21,6 +21,10 @@ centres by store type (Foodstore / Convenience Store) before selecting.
 
 import os
 
+# --- Feature Flags ---
+SPEND_CALCULATION_ENABLED = True
+DIFFUSION_ENABLED = True
+
 EVAL_FREQ = 10
 SOCIAL_SCALING_ALPHA = 0.05
 CONFORMITY_RANGE = [0.1, 0.5]
@@ -153,3 +157,19 @@ INTERVENTION_SUCCESS_PROBABILITY = 0.15
 # --- Death Spiral Decline Velocity ---
 # Compounding utility penalty of -3.5% per evaluation period for centres in permanent decline
 RETAIL_DECLINE_PENALTY = 0.965
+
+# --- Spend per Retail Trip Configuration ---
+# Reference UK average household size for scaling ONS Family Spending data
+SPEND_REFERENCE_HH_SIZE = 2.4
+
+# Spend distribution parameters per trip type (means and standard deviations)
+SPEND_CONFIG = {
+    'grocery_bulk': {'mean': 65.00, 'sd': 15.00},
+    'grocery_online': {'mean': 65.00, 'sd': 15.00},
+    'grocery_convenience': {'mean': 16.60, 'sd': 5.00},
+    'comparison': {'mean': 45.00, 'sd': 20.00},
+    'entertainment': {'mean': 30.00, 'sd': 15.00},
+    'food_drink': {'mean': 25.00, 'sd': 10.00},
+    'service': {'mean': 20.00, 'sd': 10.00}
+}
+

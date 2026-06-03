@@ -22,6 +22,17 @@ from simulation.core.simulation_engine import SimulationEngine
 from simulation.core.constants import TRANSPORT_MODES
 import visualization
 
+# ==============================================================================
+# SIMULATION FEATURE TOGGLES (Configure script defaults here)
+# ==============================================================================
+SPEND_CALCULATION_ENABLED = True  # Enable/disable spend tracking per trip
+DIFFUSION_ENABLED         = True  # Enable/disable social influence (word of mouth)
+# ==============================================================================
+
+# Ensure global config module is initialized with script-level defaults at import time
+config.SPEND_CALCULATION_ENABLED = SPEND_CALCULATION_ENABLED
+config.DIFFUSION_ENABLED = DIFFUSION_ENABLED
+
 def _clean_rc_id(x):
     try:
         s = str(x)
@@ -33,7 +44,7 @@ class RetailABMApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Retail ABM Configuration")
-        self.root.geometry("450x370")
+        self.root.geometry("450x450")
 
         self._base_data = None
         self._loaded_n = None
@@ -52,6 +63,13 @@ class RetailABMApp:
         ttk.Label(root, text="Evaluation Frequency (Days):").pack(pady=5)
         self.eval_freq_var = tk.StringVar(value="10")
         ttk.Entry(root, textvariable=self.eval_freq_var).pack(pady=5)
+
+        # GUI-level Feature Checkboxes
+        self.spend_calc_var = tk.BooleanVar(value=SPEND_CALCULATION_ENABLED)
+        ttk.Checkbutton(root, text="Enable Spend per Retail Trip", variable=self.spend_calc_var).pack(pady=5)
+
+        self.diffusion_var = tk.BooleanVar(value=DIFFUSION_ENABLED)
+        ttk.Checkbutton(root, text="Enable Social Influence (Diffusion)", variable=self.diffusion_var).pack(pady=5)
 
         ttk.Button(root, text="Run Simulation", command=self.run_simulation).pack(pady=20)
 
@@ -145,6 +163,10 @@ class RetailABMApp:
 
     def run_simulation(self):
         try:
+            # Sync global config feature toggles with GUI selection
+            config.SPEND_CALCULATION_ENABLED = self.spend_calc_var.get()
+            config.DIFFUSION_ENABLED = self.diffusion_var.get()
+
             num_agents_req = int(self.num_agents_var.get())
             days = int(self.days_var.get())
             eval_freq = int(self.eval_freq_var.get())

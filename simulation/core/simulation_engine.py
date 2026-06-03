@@ -13,6 +13,12 @@ class SimulationEngine:
         self.utility_matrices = utility_matrices
         self.amenity_binary = amenity_binary
         
+        # Extract household_size mapping (default to 2.4 reference if missing)
+        if self.consumers_df is not None and 'household' in self.consumers_df.columns and 'household_size' in self.consumers_df.columns:
+            self.hh_size_map = self.consumers_df.set_index(self.consumers_df['household'].astype(str))['household_size'].to_dict()
+        else:
+            self.hh_size_map = {}
+        
         # 1. Cache base utilities ONLY if decay is enabled (saves massive RAM for large runs)
         decay = getattr(config, 'SOCIAL_DECAY_FACTOR', 1.0)
         if decay < 1.0:
@@ -121,12 +127,17 @@ class SimulationEngine:
             online_mask = needs_grocery & (grocery_mode_series == 'online')
             if online_mask.any():
                 idx = self.population.state_df[online_mask].index
+                agent_ids = self.population.state_df.loc[idx, 'AgentID'].values
+                online_spends = self._calculate_trip_spends(
+                    agent_ids, ['grocery'] * len(idx), ['online'] * len(idx)
+                )
                 trip_data = {
-                    'Day': day, 'AgentID': self.population.state_df.loc[idx, 'AgentID'].values,
+                    'Day': day, 'AgentID': agent_ids,
                     'Postcode': self.population.state_df.loc[idx, 'Postcode'].values,
                     'Trip_Type': 'grocery', 'Retail_Centre': 'ONLINE',
                     'Grocery_Mode': 'online', 'Transport_Mode': None,
-                    'Utility_Modifier': 1.0, 'Utility_Score': 0.0
+                    'Utility_Modifier': 1.0, 'Utility_Score': 0.0,
+                    'Spend': online_spends
                 }
                 if save_raw:
                     trip_data['Travel_Time_Min'] = 0.0
@@ -190,12 +201,20 @@ class SimulationEngine:
                                     if key in self.utility_matrices:
                                         f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                             
+                            # Calculate spend for this chained trip
+                            chained_agent_ids = self.population.state_df.loc[v_idx, 'AgentID'].values
+                            chained_g_modes = grocery_mode_series.loc[v_idx].values
+                            chained_spends = self._calculate_trip_spends(
+                                chained_agent_ids, [t_type] * len(v_idx), chained_g_modes
+                            )
+                            
                             trip_data = {
-                                'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
+                                'Day': day, 'AgentID': chained_agent_ids,
                                 'Postcode': pc_series.values, 'Trip_Type': t_type,
-                                'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
+                                'Retail_Centre': dests[valid].values, 'Grocery_Mode': chained_g_modes,
                                 'Transport_Mode': modes.loc[v_idx].values,
-                                'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
+                                'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values,
+                                'Spend': chained_spends
                             }
                             if save_raw and tt_series is not None:
                                 trip_data['Travel_Time_Min'] = tt_series.values
@@ -231,12 +250,20 @@ class SimulationEngine:
                             if key in self.utility_matrices:
                                 f_mults.loc[s_idx] = apply_feedback(self.utility_matrices[key], self.population.state_df.loc[s_idx, 'AgentID'].values, dests[s_idx].values)
                                 
+                    # Calculate spend for independent trips
+                    indep_agent_ids = self.population.state_df.loc[v_idx, 'AgentID'].values
+                    indep_g_modes = grocery_mode_series.loc[v_idx].values
+                    indep_spends = self._calculate_trip_spends(
+                        indep_agent_ids, [t_type] * len(v_idx), indep_g_modes
+                    )
+                    
                     trip_data = {
-                        'Day': day, 'AgentID': self.population.state_df.loc[v_idx, 'AgentID'].values,
+                        'Day': day, 'AgentID': indep_agent_ids,
                         'Postcode': pc_series.values, 'Trip_Type': t_type,
-                        'Retail_Centre': dests[valid].values, 'Grocery_Mode': grocery_mode_series.loc[v_idx].values,
+                        'Retail_Centre': dests[valid].values, 'Grocery_Mode': indep_g_modes,
                         'Transport_Mode': modes.loc[v_idx].values,
-                        'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values
+                        'Utility_Modifier': f_mults.values, 'Utility_Score': scores.loc[v_idx].values,
+                        'Spend': indep_spends
                     }
                     if save_raw and tt_series is not None:
                         trip_data['Travel_Time_Min'] = tt_series.values
@@ -256,11 +283,17 @@ class SimulationEngine:
                 modes_agg = day_df.groupby('Transport_Mode').size()
                 online_cnt = (day_df['Retail_Centre'] == 'ONLINE').sum()
                 
-                day_row = pd.Series(0, index=['Day', 'Total_Visits', 'Online'])
+                # Aggregate spend
+                total_spend = day_df['Spend'].sum()
+                spends_by_type = day_df.groupby('Trip_Type')['Spend'].sum()
+                spends_by_type.index = [f"{t}_Spend" for t in spends_by_type.index]
+                
+                day_row = pd.Series(0.0, index=['Day', 'Total_Visits', 'Online', 'Total_Spend'])
                 day_row['Day'] = day
                 day_row['Total_Visits'] = len(day_df)
                 day_row['Online'] = online_cnt
-                day_row = pd.concat([day_row, trips_agg, modes_agg])
+                day_row['Total_Spend'] = total_spend
+                day_row = pd.concat([day_row, trips_agg, modes_agg, spends_by_type])
                 
                 self.daily_summary = pd.concat([self.daily_summary, day_row.to_frame().T], ignore_index=True)
 
@@ -272,6 +305,8 @@ class SimulationEngine:
                     perf_update = physical_trips.pivot_table(
                          index='Retail_Centre', columns='Metric', aggfunc='size', fill_value=0
                     )
+                    # Add spend sum to the centre performance matrix
+                    perf_update['Total_Revenue'] = physical_trips.groupby('Retail_Centre')['Spend'].sum()
                     
                     if self.centre_performance.empty:
                         self.centre_performance = perf_update
@@ -287,8 +322,9 @@ class SimulationEngine:
                     self.eval_period_visits.clear()
 
                 # D. Daily Social Influence Diffusion
-                diffusion_msgs = self.population.apply_social_influence(day_df, self.utility_matrices, self.base_utilities)
-                for msg in diffusion_msgs: log(msg)
+                if getattr(config, 'DIFFUSION_ENABLED', True):
+                    diffusion_msgs = self.population.apply_social_influence(day_df, self.utility_matrices, self.base_utilities)
+                    for msg in diffusion_msgs: log(msg)
 
                 # Accumulate/save raw outputs based on mode
                 if output_mode == "parquet_paths":
@@ -619,3 +655,57 @@ class SimulationEngine:
                     out[mask_indices[valid]] = vals.astype(np.float32)
 
         return pd.Series(out, index=postcode_series.index)
+
+    def _calculate_trip_spends(self, agent_ids, trip_types, grocery_modes=None):
+        """
+        Calculates spend per trip based on ONS Family Spending data.
+        Scales spend by household size.
+        """
+        n_trips = len(agent_ids)
+        spends = np.zeros(n_trips, dtype=np.float32)
+        
+        if not getattr(config, 'SPEND_CALCULATION_ENABLED', True):
+            return spends
+        
+        # Load configuration
+        spend_cfg = getattr(config, 'SPEND_CONFIG', {})
+        ref_size = getattr(config, 'SPEND_REFERENCE_HH_SIZE', 2.4)
+        
+        # Convert inputs to numpy arrays/lists for fast iteration/indexing
+        agent_ids_str = [str(x) for x in agent_ids]
+        
+        # Get household sizes (default to 2.4 reference if not found)
+        hh_sizes = np.array([self.hh_size_map.get(aid, ref_size) for aid in agent_ids_str], dtype=np.float32)
+        hh_multipliers = hh_sizes / ref_size
+        
+        # Determine exact spend category for each trip
+        categories = []
+        for i in range(n_trips):
+            t_type = trip_types[i]
+            if t_type == 'grocery':
+                g_mode = grocery_modes[i] if grocery_modes is not None else 'convenience'
+                category = f'grocery_{g_mode}'
+            else:
+                category = t_type
+            categories.append(category)
+            
+        # Draw spends using normal distributions, scaled by hh multiplier
+        categories = np.array(categories)
+        for cat in np.unique(categories):
+            mask = (categories == cat)
+            if not mask.any():
+                continue
+                
+            cfg = spend_cfg.get(cat, {'mean': 20.0, 'sd': 5.0})
+            mean = cfg['mean']
+            sd = cfg['sd']
+            
+            # Generate random spends
+            raw_draws = np.random.normal(loc=mean, scale=sd, size=mask.sum())
+            clipped_draws = np.clip(raw_draws, 0.0, None)
+            
+            # Scale by household size multiplier
+            spends[mask] = clipped_draws * hh_multipliers[mask]
+            
+        return spends
+
