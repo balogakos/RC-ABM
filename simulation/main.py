@@ -25,8 +25,10 @@ import visualization
 # ==============================================================================
 # SIMULATION FEATURE TOGGLES (Configure script defaults here)
 # ==============================================================================
-SPEND_CALCULATION_ENABLED = True  # Enable/disable spend tracking per trip
-DIFFUSION_ENABLED         = True  # Enable/disable social influence (word of mouth)
+# Enable/disable spend tracking per retail trip (can impact performance)
+SPEND_CALCULATION_ENABLED = True  
+# Enable/disable social influence and word of mouth diffusion
+DIFFUSION_ENABLED         = True  
 # ==============================================================================
 
 # Ensure global config module is initialized with script-level defaults at import time
@@ -34,6 +36,10 @@ config.SPEND_CALCULATION_ENABLED = SPEND_CALCULATION_ENABLED
 config.DIFFUSION_ENABLED = DIFFUSION_ENABLED
 
 def _clean_rc_id(x):
+    """
+    Cleans the retail centre ID by ensuring it is a string 
+    and stripping any '.0' suffix that might be added during float conversion.
+    """
     try:
         s = str(x)
         return s[:-2] if s.endswith('.0') else s
@@ -41,6 +47,9 @@ def _clean_rc_id(x):
         return str(x)
 
 class RetailABMApp:
+    """
+    Main GUI application for configuring and running the Retail Agent-Based Model simulation.
+    """
     def __init__(self, root):
         self.root = root
         self.root.title("Retail ABM Configuration")
@@ -74,11 +83,19 @@ class RetailABMApp:
         ttk.Button(root, text="Run Simulation", command=self.run_simulation).pack(pady=20)
 
     def log(self, message):
+        """Helper method to print to console and update the GUI status."""
         print(message)
         self.status_var.set(message)
         self.root.update()
 
     def load_data(self, n_agents=None):
+        """
+        Loads the underlying data needed for the simulation:
+        1) Consumer agent profiles and probability distributions
+        2) Pre-computed destination utility matrices
+        3) Retail centre amenities and characteristics
+        4) Transportation network times
+        """
         base_utility_dir = config.UTILITY_DIR
         self.log("Loading 6 trip-specific datasets...")
         
@@ -162,6 +179,10 @@ class RetailABMApp:
         return consumers, utility_matrices, amenity_binary, tt_lookup
 
     def run_simulation(self):
+        """
+        Retrieves user settings from the GUI, initializes the SimulationEngine, 
+        and executes the simulation loop.
+        """
         try:
             # Sync global config feature toggles with GUI selection
             config.SPEND_CALCULATION_ENABLED = self.spend_calc_var.get()
@@ -210,6 +231,7 @@ class RetailABMApp:
             messagebox.showerror("Error", f"{e}\n\n{traceback.format_exc()}")
 
 def main():
+    """Application entry point."""
     paths.ensure_dirs()
     root = tk.Tk()
     RetailABMApp(root)
