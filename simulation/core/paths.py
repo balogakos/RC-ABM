@@ -1,3 +1,7 @@
+"""
+Centralised path configuration module for the RC-ABM simulation.
+Resolves and defines all base directories, data inputs, and output paths.
+"""
 from pathlib import Path
 import os
 

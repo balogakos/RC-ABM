@@ -35,7 +35,10 @@ def apply_choice_modifiers(relevant_utils: pd.DataFrame, state_df_or_attribs: pd
 def sample_destinations(relevant_utils, shoppers_idx):
     """
     Draws one destination per agent using softmax over utility scores.
-    Returns a Series (index = shoppers_idx) mapping agent → chosen centre ID.
+    Uses numpy float16 and float32 operations to avoid massive memory overheads 
+    when operating on large utility matrices.
+    
+    Returns a pandas Series (index = shoppers_idx) mapping agent -> chosen centre ID.
     """
     row_sums = relevant_utils.sum(axis=1)
     valid = row_sums > 0
@@ -88,6 +91,8 @@ def sample_destinations(relevant_utils, shoppers_idx):
 def joint_mode_destination_choice(aligned_mode_utils, shoppers_idx):
     """
     Joint transport-mode and destination choice via proportional sampling.
+    Stacks walk, drive, and PT utilities, scales via softmax, and samples a single choice.
+    Returns three Series: (destinations, modes_used, chosen_scores).
     """
     destinations  = pd.Series(None, index=shoppers_idx, dtype=object)
     modes_used    = pd.Series(None, index=shoppers_idx, dtype=object)
@@ -174,6 +179,9 @@ def demographic_similarity_scores(demo_lookup, influencer_ids, target_ids,
     """
     Computes a Gaussian similarity score in [0, 1] for each target agent relative
     to the demographic centroid of the influencer group.
+    
+    Used by the spatial behaviour diffusion mechanism to simulate homophily:
+    agents are more influenced by neighbourhoods that demographically resemble them.
     """
     inf_data = demo_lookup.reindex(influencer_ids).dropna()
     tgt_data = demo_lookup.reindex(target_ids).fillna(demo_lookup.mean())
@@ -204,6 +212,8 @@ def demographic_similarity_scores(demo_lookup, influencer_ids, target_ids,
 def apply_feedback(utility_matrix, agent_ids, chosen_centres):
     """
     Applies a simple stochastic feedback loop to a utility matrix in-place.
+    Simulates agents learning over time: successful visits increase utility slightly (1.05),
+    unsuccessful visits decrease utility slightly (0.95).
     """
     if len(agent_ids) == 0:
         return np.array([])
