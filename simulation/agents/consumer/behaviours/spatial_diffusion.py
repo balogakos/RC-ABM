@@ -105,11 +105,9 @@ def apply_spatial_diffusion_bonus(visits_df, attributes_df, utility_matrices, ba
     # -------------------------------------------------------------------------
     # 2. Calculate Local Popularity P(s,c) for ALL centres simultaneously
     # -------------------------------------------------------------------------
-    visits_with_pc = visits_df.copy()
-    visits_with_pc['Postcode_Sector'] = (
-        visits_with_pc['AgentID'].astype(str).map(agent_to_postcode)
-    )
-    visits_with_pc = visits_with_pc.dropna(subset=['Postcode_Sector'])
+    visits_with_pc = visits_df.assign(
+        Postcode_Sector=visits_df['AgentID'].astype(str).map(agent_to_postcode)
+    ).dropna(subset=['Postcode_Sector'])
 
     if visits_with_pc.empty:
         return []

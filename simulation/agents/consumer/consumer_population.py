@@ -100,15 +100,16 @@ class ConsumerPopulation:
         # logic: Stock = Threshold + (Cycle_Progress * Consumption_Rate)
         # where Cycle_Progress is U(0, Cycle_Length)
         
+        # Smooth-start: uniformly distribute agents across their replenishment cycle.
+        # Each agent gets a random phase [0,1] representing where they are in their cycle.
+        # phase=0 → stock just at threshold (will shop soon); phase=1 → stock full.
+        # Allow ~10% to start slightly below threshold so Day 1 has realistic activity.
         cycle_length = (self.state_df['Capacity'] - self.state_df['Shopping_Threshold']) / self.state_df['Consumption_Rate']
-        cycle_progress = np.random.uniform(0, cycle_length, num_agents)
-        
-        # Some agents start "Pre-depleted" to ensure Day 1 still has some activity
-        # We allow 10% of agents to start below threshold to simulate a normal day
-        start_offset = np.random.uniform(-0.1, 1.0, num_agents) * cycle_length
-        
-        self.state_df['Stock'] = self.state_df['Shopping_Threshold'] + (start_offset * self.state_df['Consumption_Rate'])
-        self.state_df['Stock'] = self.state_df['Stock'].clip(0, self.state_df['Capacity'])
+        phase = np.random.uniform(-0.1, 1.0, num_agents)  # slight negative → below threshold
+        self.state_df['Stock'] = (
+            self.state_df['Shopping_Threshold']
+            + phase * (self.state_df['Capacity'] - self.state_df['Shopping_Threshold'])
+        ).clip(0, self.state_df['Capacity'])
 
     def consume(self):
         """Daily stock reduction."""

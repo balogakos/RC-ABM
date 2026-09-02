@@ -147,10 +147,9 @@ class SimulationEngine:
             trips_to_place = {t: mask.copy() for t, mask in nts_triggered.items()}
             trips_to_place['grocery'] = needs_grocery & grocery_mode_series.isin(['bulk', 'convenience'])
 
-            trip_counts = pd.Series(0, index=self.population.state_df.index)
-            for t, mask in trips_to_place.items():
-                trip_counts += mask.astype(int)
-            
+            trip_counts = np.sum(
+                [mask.values.astype(np.int8) for mask in trips_to_place.values()], axis=0
+            )
             chain_candidates = self.population.state_df.index[trip_counts > 1]
             will_chain = pd.Series(False, index=self.population.state_df.index)
             if not chain_candidates.empty:
@@ -191,7 +190,9 @@ class SimulationEngine:
                             tt_series = self._lookup_travel_times(pc_series, tm_series, dests[valid])
 
                         for t_type in combo_list:
-                            util_p = TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery' else grocery_mode_series.loc[v_idx].iloc[0]
+                            # Determine utility prefix per agent's actual grocery mode
+                            util_p = (TRIP_TYPE_CONFIG[t_type]['util_prefix'] if t_type != 'grocery'
+                                      else grocery_mode_series.loc[v_idx].mode().iloc[0])
                             f_mults = pd.Series(1.0, index=v_idx)
                             for tmode in TRANSPORT_MODES:
                                 tseg = (modes.loc[v_idx] == tmode)

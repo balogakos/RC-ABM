@@ -1,17 +1,22 @@
 import os
+import sys
 import glob
 import shutil
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
+# Derive paths from script location, not hardcoded machine paths
+_SCRIPT_DIR  = Path(__file__).resolve().parent          # multi_runs/
+_PROJECT_ROOT = _SCRIPT_DIR.parent                      # Retail_ABM/
+
 def aggregate_ensemble():
     print("=" * 60)
     print("AGGREGATING ENSEMBLE RESULTS FROM RESULTS FOLDER")
     print("=" * 60)
     
-    results_dir = Path(r"C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\multi_runs\results")
-    outputs_root = Path(r"C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\outputs")
+    results_dir  = _SCRIPT_DIR / "results"
+    outputs_root = _PROJECT_ROOT / "outputs"
     
     # 1. Back up and clean the main outputs folders
     print("\nStep 1: Cleaning up outputs directory and moving old files to backup...")

@@ -11,24 +11,21 @@ def choose_mode(attributes_df, shopping_mask):
     """
     Draws a grocery shopping mode (online / bulk / convenience) for each agent
     whose index appears in shopping_mask.
+    Probabilities are pre-normalised at load time, so no re-normalisation needed.
     """
     modes = pd.Series(index=attributes_df.index, data=None, dtype=object)
     shoppers = attributes_df[shopping_mask]
     if shoppers.empty:
         return modes
 
-    probs = shoppers[['prob_online', 'prob_bulk', 'prob_convenience']].copy()
-    row_sums = probs.sum(axis=1)
-    probs = probs.div(row_sums, axis=0).fillna(0)
-
-    rand = np.random.random(len(shoppers))
+    probs  = shoppers[['prob_online', 'prob_bulk', 'prob_convenience']].values
+    rand   = np.random.random(len(shoppers))
     cumsum = probs.cumsum(axis=1)
 
-    chosen = pd.Series(index=shoppers.index, data='convenience')  # default
-    chosen[rand < cumsum['prob_online']] = 'online'
-    chosen[(rand >= cumsum['prob_online']) & (rand < cumsum['prob_bulk'])] = 'bulk'
-
-    modes.update(chosen)
+    chosen = np.where(rand < cumsum[:, 0], 'online',
+             np.where(rand < cumsum[:, 1], 'bulk', 'convenience'))
+    modes.iloc[shoppers.index.get_indexer(shoppers.index)] = chosen
+    modes.update(pd.Series(chosen, index=shoppers.index))
     return modes
 
 def trigger_trips(attributes_df, multiplier=1.0):

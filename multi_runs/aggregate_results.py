@@ -91,8 +91,10 @@ def aggregate_retail_performance(input_path, output_path=None):
     print("Enriching results with Retail Centre metadata (POIs)...")
     try:
         import geopandas as gpd
-        gpkg_path = r"c:\Users\sgabalog\Documents\P3\Model\data_local\liverpool\processed\retail_centre_type_counts.gpkg"
-        retail_data = gpd.read_file(gpkg_path, layer='retail_centre_counts')
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'simulation'))
+        import config
+        retail_data = gpd.read_file(config.RETAIL_CENTRES_GPKG, layer='retail_centre_counts')
 
         # Clean IDs for matching
         def clean_id(x):

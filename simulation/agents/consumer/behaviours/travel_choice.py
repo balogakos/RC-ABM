@@ -95,15 +95,15 @@ def choose_destination_for_trip(trip_type, triggered_mask, attributes_df,
         if not filter_col:
             return mat
         if isinstance(filter_col, list):
-            or_mask = pd.Series(0.0, index=mat.columns)
-            for col in filter_col:
-                if col in amenity_binary:
-                    vec = amenity_binary[col].reindex(mat.columns, fill_value=0)
-                    or_mask = or_mask.combine(
-                        vec,
-                        lambda a, b: 1.0 if (a == 1.0 or b == 1.0) else 0.0)
-            mask_vals = or_mask.values.astype(np.float16)
-            return pd.DataFrame(mat.values * mask_vals, index=mat.index, columns=mat.columns)
+            # NumPy OR across amenity columns — faster than pd.Series.combine() with a lambda
+            amenity_vecs = [
+                amenity_binary[col].reindex(mat.columns, fill_value=0).values
+                for col in filter_col if col in amenity_binary
+            ]
+            if amenity_vecs:
+                or_mask = np.any(np.stack(amenity_vecs, axis=0), axis=0).astype(np.float16)
+                return pd.DataFrame(mat.values * or_mask, index=mat.index, columns=mat.columns)
+            return mat
         else:
             if filter_col in amenity_binary:
                 binary_vec = amenity_binary[filter_col].reindex(
@@ -150,7 +150,7 @@ def choose_chained_destination(trip_list, shoppers_idx, grocery_modes,
     trip_metas = []
     for trip in trip_list:
         if trip == 'grocery':
-            gmode = grocery_modes.loc[shoppers_idx].iloc[0] if not grocery_modes.loc[shoppers_idx].empty else 'bulk'
+            gmode = grocery_modes.loc[shoppers_idx].mode().iloc[0] if not grocery_modes.loc[shoppers_idx].empty else 'bulk'
             trip_metas.append({
                 'prefix': gmode,
                 'filter': 'Foodstore' if gmode == 'bulk' else 'Convenience Store'
@@ -182,12 +182,16 @@ def choose_chained_destination(trip_list, shoppers_idx, grocery_modes,
             fcol = meta['filter']
             mask = pd.Series(1.0, index=rel.columns)
             if isinstance(fcol, list):
-                or_mask = pd.Series(0.0, index=rel.columns)
-                for c in fcol:
-                    if c in amenity_binary:
-                        vec = amenity_binary[c].reindex(rel.columns, fill_value=0)
-                        or_mask = or_mask.combine(vec, lambda a, b: 1.0 if (a == 1.0 or b == 1.0) else 0.0)
-                mask = or_mask
+                # NumPy OR across amenity columns
+                amenity_vecs = [
+                    amenity_binary[c].reindex(rel.columns, fill_value=0).values
+                    for c in fcol if c in amenity_binary
+                ]
+                if amenity_vecs:
+                    mask = pd.Series(
+                        np.any(np.stack(amenity_vecs, axis=0), axis=0).astype(float),
+                        index=rel.columns
+                    )
             elif fcol and fcol in amenity_binary:
                 mask = amenity_binary[fcol].reindex(rel.columns, fill_value=0)
             

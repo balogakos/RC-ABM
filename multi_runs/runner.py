@@ -23,10 +23,10 @@ from simulation.core import paths
 from simulation.core.simulation_engine import SimulationEngine
 
 # --- Ensemble Configuration ---
-NUM_RUNS    = 3     # Number of iterations to average out uncertainty
-DAYS        = 60
-EVAL_FREQ   = 10
-SAMPLE_SIZE = 60000   # Number of agents to sample randomly from the full dataset (set to None for all agents)
+NUM_RUNS    = 5      # Number of iterations to average ensemble uncertainty
+DAYS        = 90    # 90-day run — long enough for hierarchy to stabilise
+EVAL_FREQ   = 30    # Match paper (Section 2.2): evaluate every 30 ticks
+SAMPLE_SIZE = 60000  # Agents sub-sampled per run for memory efficiency
 
 def _clean_rc_id(x):
     s = str(x)
