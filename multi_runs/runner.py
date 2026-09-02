@@ -24,9 +24,13 @@ from simulation.core.simulation_engine import SimulationEngine
 
 # --- Ensemble Configuration ---
 NUM_RUNS    = 5      # Number of iterations to average ensemble uncertainty
-DAYS        = 90    # 90-day run — long enough for hierarchy to stabilise
+DAYS        = 120   # 120 days = 4 evaluation windows at EVAL_FREQ=30.
+                    # Minimum needed to observe death spirals (3 consecutive failures).
 EVAL_FREQ   = 30    # Match paper (Section 2.2): evaluate every 30 ticks
 SAMPLE_SIZE = 60000  # Agents sub-sampled per run for memory efficiency
+
+# Results output directory — override this from run_ablation.py for ablation runs
+RESULTS_SUBDIR = "results"  # relative to multi_runs/
 
 def _clean_rc_id(x):
     s = str(x)
@@ -144,7 +148,7 @@ def run_single_iteration(run_id):
         
     engine = SimulationEngine(consumers_df, utility_matrices, amenity_binary, tt_lookup)
         
-    results_dir = Path(ROOT_DIR) / "multi_runs" / "results"
+    results_dir = Path(ROOT_DIR) / "multi_runs" / RESULTS_SUBDIR
     results_dir.mkdir(parents=True, exist_ok=True)
     
     start_time = time.time()
@@ -178,7 +182,7 @@ def run_ensemble():
     import time
     print(f"====================================================")
     print(f"RETAIL ABM ENSEMBLE RUNNER (Sequential Mode)")
-    print(f"Total Runs: {NUM_RUNS} | Days: {DAYS}")
+    print(f"Total Runs: {NUM_RUNS} | Days: {DAYS} | Results: multi_runs/{RESULTS_SUBDIR}")
     print(f"====================================================\n")
     
     overall_start = time.time()

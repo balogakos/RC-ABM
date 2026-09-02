@@ -12,20 +12,27 @@ from pathlib import Path
 # --- CONFIGURATION ---
 # =========================================================================
 # Toggle to use real validation data or synthetic comparison data
-USE_VALIDATION_DATA = True
+USE_VALIDATION_DATA  = True
 VALIDATION_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\footfall_validation.csv')
-SPEND_DATA_PATH = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\spend_rankings.csv')
+SPEND_DATA_PATH      = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM\model_output_visualisation\synthetic_data\spend_rankings.csv')
 
 # Import config from the simulation directory
 import sys
-PROJECT_ROOT = Path(r'C:\Users\sgabalog\Documents\P3\Model\Retail_ABM')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / 'simulation'))
 import config
 
 # Paths for outputs and spatial data
 OUTPUTS_ROOT = PROJECT_ROOT / 'outputs'
-CENTRE_DIR = OUTPUTS_ROOT / 'centre_performance'
-GPKG_PATH = Path(config.RETAIL_CENTRES_GPKG)
+CENTRE_DIR   = OUTPUTS_ROOT / 'centre_performance'
+GPKG_PATH    = Path(config.RETAIL_CENTRES_GPKG)
+
+# Ablation (Diffusion OFF) ensemble mean file
+# Produced by: multi_runs/run_ablation.py + aggregate_ensemble_ablation.py
+ABLATION_PERF_FILE = (
+    PROJECT_ROOT / 'multi_runs' / 'results_ablation'
+    / 'ensemble_centre_performance_ablation_mean.csv'
+)
 
 # Clean function for IDs
 def clean_id(x):
@@ -143,10 +150,35 @@ if df_spend is not None:
     gdf_mapped = gdf_mapped.merge(df_spend, on='clean_id', how='left')
     gdf_mapped['Spend Rank'] = gdf_mapped['Spend Rank'].fillna(gdf_mapped['Spend Rank'].max() + 1)
 
-# Generate synthetic Diffusion OFF data (larger noise relative to real_visits)
-np.random.seed(100)
-noise_off = np.random.normal(0, 0.25 * gdf_mapped['real_visits'])
-gdf_mapped['sim_visits_off'] = np.clip(gdf_mapped['real_visits'] + noise_off, 0, None).round(0)
+# Load Diffusion OFF ablation data from the real ensemble run
+df_sim_off = None
+if ABLATION_PERF_FILE.exists():
+    print(f"Loading real Diffusion OFF ablation data from: {ABLATION_PERF_FILE.name}")
+    df_abl = pd.read_csv(ABLATION_PERF_FILE)
+    # Sum across trip-type x mode columns to get total visits
+    abl_visit_cols = [c for c in df_abl.columns if c not in ('Retail_Centre', 'Total_Revenue', 'Total_Visits')]
+    if 'Total_Visits' in df_abl.columns:
+        df_abl['sim_visits_off'] = df_abl['Total_Visits']
+    else:
+        df_abl['sim_visits_off'] = df_abl[abl_visit_cols].sum(axis=1)
+    df_abl['clean_id'] = df_abl['Retail_Centre'].apply(clean_id) if 'Retail_Centre' in df_abl.columns \
+        else df_abl.index.map(clean_id)
+    df_sim_off = df_abl[['clean_id', 'sim_visits_off']].copy()
+else:
+    print("WARNING: Ablation data not found at:")
+    print(f"  {ABLATION_PERF_FILE}")
+    print("Run multi_runs/run_ablation.py then aggregate_ensemble_ablation.py to generate it.")
+    print("Falling back to synthetic noise placeholder (NOT suitable for publication).")
+
+# Join Diffusion OFF visits — real ablation data or synthetic fallback
+if df_sim_off is not None:
+    gdf_mapped = gdf_mapped.merge(df_sim_off, on='clean_id', how='left')
+    gdf_mapped['sim_visits_off'] = gdf_mapped['sim_visits_off'].fillna(0)
+else:
+    # Synthetic fallback — clear warning already printed above
+    np.random.seed(100)
+    noise_off = np.random.normal(0, 0.25 * gdf_mapped['real_visits'])
+    gdf_mapped['sim_visits_off'] = np.clip(gdf_mapped['real_visits'] + noise_off, 0, None).round(0)
 
 # Calculate simulated ranks
 gdf_mapped['sim_rank_on'] = gdf_mapped['sim_visits_on'].rank(ascending=False, method='min')
