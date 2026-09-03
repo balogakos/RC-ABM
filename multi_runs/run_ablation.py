@@ -39,6 +39,15 @@ _runner.DAYS           = DAYS_ABLATION
 _runner.EVAL_FREQ      = EVAL_FREQ_ABLATION
 _runner.RESULTS_SUBDIR = "results_ablation"  # separate folder — never mixed with main results
 
+# Redirect engine output directory to outputs_ablation/ so ablation files
+# never contaminate outputs/centre_performance/ used by the main plotting scripts.
+from simulation.core import paths as _paths
+_ABLATION_OUTPUT_DIR = _paths.PROJECT_ROOT / "outputs_ablation"
+_paths.OUTPUT_DIR = _ABLATION_OUTPUT_DIR  # override before engine initialises
+for _subdir in ["daily_summaries", "centre_performance", "utility_convergence"]:
+    (_ABLATION_OUTPUT_DIR / _subdir).mkdir(parents=True, exist_ok=True)
+print(f"Engine output redirected to: outputs_ablation/")
+
 # 2. Disable diffusion in config
 _original_diffusion = getattr(config, 'DIFFUSION_ENABLED', True)
 config.DIFFUSION_ENABLED = False
