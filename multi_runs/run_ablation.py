@@ -45,7 +45,7 @@ config.DIFFUSION_ENABLED = False
 print("=" * 60)
 print("ABLATION MODE: DIFFUSION_ENABLED = False")
 print(f"Runs: {NUM_RUNS_ABLATION} | Days: {DAYS_ABLATION} | EVAL_FREQ: {EVAL_FREQ_ABLATION}")
-print(f"Results → multi_runs/results_ablation/")
+print(f"Results -> multi_runs/results_ablation/")
 print("=" * 60 + "\n")
 
 # 3. Run the ensemble
