@@ -1,9 +1,27 @@
+import sys
 import os
 import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.lines as lines
 from pathlib import Path
+
+sys.stdout.reconfigure(encoding='utf-8')
+
+# =========================================================================
+# --- HOUSE-STYLE PALETTE ---
+# =========================================================================
+ORANGE  = '#E8482C'
+NAVY    = '#194091'
+BG      = '#F5F7F8'
+TEXT    = '#37474F'
+SUBTEXT = '#546E7A'
+RULE    = '#CFD8DC'
+TEAL    = '#4DB6AC'
+
+MAIN_TITLE = 'Simulated Retail Activity \u2014 Daily Visit Dynamics'
+SUBTITLE   = 'Ensemble mean across 5 runs \u00d7 120 days. Shaded bands = \u00b11 SD.'
 
 # =========================================================================
 # --- USER CONFIGURATION ---
@@ -96,24 +114,34 @@ agg_conv.columns = [f'{col}_{stat}' for col, stat in agg_conv.columns]
 df_conv = agg_conv.reset_index()
 
 # =========================================================================
-# --- 2. Plotting (1x2 Grid, Premium Aesthetics) ---
+# --- 2. Plotting (1x2 Grid, House Style) ---
 # =========================================================================
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5.5))
+fig.patch.set_facecolor(BG)
 
-# Premium color palette for retail types
+# --- Figure-level header ---
+top    = 0.97
+rule_y = top - 0.07
+fig.text(0.04, top,        MAIN_TITLE, fontsize=22, fontweight='bold', color=TEXT,    va='top')
+fig.text(0.04, top - 0.04, SUBTITLE,   fontsize=13,                    color=SUBTEXT, va='top')
+fig.add_artist(lines.Line2D([0.04, 0.96], [rule_y, rule_y], color=RULE, linewidth=1.5,
+                             transform=fig.transFigure, clip_on=False))
+
+# --- House-style palette for retail types ---
 category_colors = {
-    'comparison': '#1f4e79',      # Muted steel blue
-    'entertainment': '#c2780e',   # Warm bronze
-    'food_drink': '#a23b5f',      # Muted burgundy/rose
-    'grocery': '#2d6a4f',         # Forest green
-    'service': '#5b3a7d'          # Muted plum/purple
+    'comparison':    NAVY,       # #194091
+    'entertainment': ORANGE,     # #E8482C
+    'food_drink':    '#9C3D54',  # muted rose
+    'service':       '#4DB6AC',  # teal
+    'convenience':   '#7E57C2',  # muted purple
+    'grocery':       '#558B2F',  # muted green
 }
 
 # --- PANEL 1: Daily Visits by Retail Type ---
 for col in retail_types:
     legend_name = col.replace('_', ' ').title()
     color = category_colors.get(col, '#7f8c8d')
-    line, = ax1.plot(df_daily['Day'], df_daily[f'{col}_mean'], linewidth=2.5, color=color, label=legend_name)
+    ax1.plot(df_daily['Day'], df_daily[f'{col}_mean'], linewidth=2.5, color=color, label=legend_name)
     
     # Shade SD only if we have more than 1 run
     if num_daily_runs > 1:
@@ -121,53 +149,52 @@ for col in retail_types:
         upper = df_daily[f'{col}_mean'] + df_daily[f'{col}_std'].fillna(0.0)
         ax1.fill_between(df_daily['Day'], lower, upper, color=color, alpha=0.15)
 
-ax1.set_title('3.1 Daily Visits by Retail Type', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
-ax1.set_xlabel('Day')
-ax1.set_ylabel('Number of Visits')
-ax1.spines['top'].set_visible(False)
-ax1.spines['right'].set_visible(False)
-ax1.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=9)
+ax1.set_title('3.1 Daily Visits by Retail Type', fontweight='bold', color=TEXT, fontsize=13, loc='left', pad=10)
+ax1.set_xlabel('Day',              fontweight='bold', color=TEXT, fontsize=11)
+ax1.set_ylabel('Number of Visits', fontweight='bold', color=TEXT, fontsize=11)
+ax1.legend(frameon=True, facecolor=BG, edgecolor=RULE, loc='upper left',
+           bbox_to_anchor=(1.02, 1), fontsize=9)
 
 # --- PANEL 2: Total Daily Visits ---
-total_color = '#2c3e50'  # Deep slate gray/blue
-line, = ax2.plot(df_daily['Day'], df_daily['Total_Visits_mean'], linewidth=3, color=total_color, label='Total Visits')
+ax2.plot(df_daily['Day'], df_daily['Total_Visits_mean'], linewidth=3, color=TEXT, label='Total Visits')
 
 # Shade SD only if we have more than 1 run
 if num_daily_runs > 1:
     lower_total = df_daily['Total_Visits_mean'] - df_daily['Total_Visits_std'].fillna(0.0)
     upper_total = df_daily['Total_Visits_mean'] + df_daily['Total_Visits_std'].fillna(0.0)
-    ax2.fill_between(df_daily['Day'], lower_total, upper_total, color=total_color, alpha=0.15)
+    ax2.fill_between(df_daily['Day'], lower_total, upper_total, color=TEXT, alpha=0.15)
 
-ax2.set_title('3.2 Total Daily Visits', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
-ax2.set_xlabel('Day')
-ax2.set_ylabel('Total Visits')
-ax2.spines['top'].set_visible(False)
-ax2.spines['right'].set_visible(False)
-ax2.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10)
+ax2.set_title('3.2 Total Daily Visits', fontweight='bold', color=TEXT, fontsize=13, loc='left', pad=10)
+ax2.set_xlabel('Day',          fontweight='bold', color=TEXT, fontsize=11)
+ax2.set_ylabel('Total Visits', fontweight='bold', color=TEXT, fontsize=11)
+ax2.legend(frameon=True, facecolor=BG, edgecolor=RULE, loc='upper left',
+           bbox_to_anchor=(1.02, 1), fontsize=9)
 
-# Global styling enhancements for both axes
+# --- Global house-style rules for both axes ---
 for ax in [ax1, ax2]:
-    ax.set_facecolor('#fafbfc')
-    ax.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
-    ax.grid(False, axis='x')
-    ax.spines['left'].set_color('#94a3b8')
-    ax.spines['bottom'].set_color('#94a3b8')
-    ax.spines['left'].set_linewidth(1.0)
-    ax.spines['bottom'].set_linewidth(1.0)
-    ax.tick_params(colors='#475569', width=1.0, labelsize=9)
-    ax.set_xlabel('Day', fontweight='bold', color='#334155', fontsize=10, labelpad=8)
-    ax.yaxis.label.set_color('#334155')
-    ax.yaxis.label.set_fontweight('bold')
-    ax.yaxis.label.set_fontsize(10)
+    ax.set_facecolor(BG)
 
-    
+    # Spines: hide top, right, bottom; style left
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_color(RULE)
+    ax.spines['left'].set_linewidth(1)
+
+    # Grid
+    ax.grid(True,  axis='y', linestyle=':', alpha=0.6, color=RULE)
+    ax.grid(False, axis='x')
+
+    # Ticks
+    ax.tick_params(colors=TEXT, labelsize=10)
+
     # Force integer ticks on X-axis (days)
     ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 1, 0.82])
 
 # Save the visualization to outputs folder
 output_img = OUTPUTS_ROOT / f"stability_metrics_visualization_{PLOT_MODE}.png"
-plt.savefig(output_img, dpi=300, bbox_inches='tight')
+plt.savefig(output_img, dpi=300, bbox_inches='tight', facecolor=BG)
 print(f"Visualization saved to: {output_img}")
 # plt.show()

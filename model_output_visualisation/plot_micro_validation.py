@@ -3,8 +3,19 @@ import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+import matplotlib.lines as lines
 from pathlib import Path
+
+# =========================================================================
+# --- HOUSE STYLE PALETTE ---
+# =========================================================================
+ORANGE  = '#E8482C'
+NAVY    = '#194091'
+BG      = '#F5F7F8'
+TEXT    = '#37474F'
+SUBTEXT = '#546E7A'
+RULE    = '#CFD8DC'
+TEAL    = '#4DB6AC'
 
 # =========================================================================
 # --- USER CONFIGURATION (ZOOM-IN RC_IDs) ---
@@ -17,17 +28,6 @@ LOCAL_CENTRE    = '67'     # Small convenience/local centre
 # Geographically close competing centres to evaluate zero-sum dynamics
 COMPETITOR_A    = '90'
 COMPETITOR_B    = '1728'
-
-# Set style
-sns.set_theme(style="whitegrid")
-plt.rcParams.update({
-    'font.size': 11,
-    'axes.labelsize': 12,
-    'axes.titlesize': 13,
-    'xtick.labelsize': 10,
-    'ytick.labelsize': 10,
-    'figure.titlesize': 15
-})
 
 # Paths
 VISUALISATION_DIR = Path(__file__).resolve().parent
@@ -92,6 +92,20 @@ print(df_val.head(5))
 # =========================================================================
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
+# Apply house-style background to figure and both axes
+fig.patch.set_facecolor(BG)
+ax1.set_facecolor(BG)
+ax2.set_facecolor(BG)
+
+# --- Figure-level header ---
+fig.text(0.04, 0.98,
+         'Centre-Level Validation — Rank Alignment',
+         fontsize=22, fontweight='bold', color=TEXT, ha='left')
+fig.text(0.04, 0.93,
+         'Simulated footfall rank vs. observed footfall, spend, and vacancy ranks across case-study centres.',
+         fontsize=13, color=SUBTEXT, ha='left')
+fig.add_artist(lines.Line2D([0.04, 0.96], [0.90, 0.90], color=RULE, linewidth=1.5))
+
 # --- PLOT 1: Local Alignment (Grouped Rank Bar Chart) ---
 case_studies = [
     ('Regional Centre (ID: ' + REGIONAL_CENTRE + ')', REGIONAL_CENTRE),
@@ -114,23 +128,28 @@ spend_ranks = df_cases['Real Spend Rank'].values
 vac_ranks = df_cases['Real Vacancy Rank'].values
 
 # Ranks are plotted: lower value is better, so we will invert Y-axis
-rects1 = ax1.bar(x - 1.5*width, sim_ranks, width, label='Simulated Footfall Rank', color='#1f4e79')
-rects2 = ax1.bar(x - 0.5*width, real_ranks, width, label='Real Footfall Rank', color='#c2780e')
-rects3 = ax1.bar(x + 0.5*width, spend_ranks, width, label='Real Spend Rank', color='#5b3a7d')
-rects4 = ax1.bar(x + 1.5*width, vac_ranks, width, label='Real Vacancy Rank', color='#a23b5f')
+rects1 = ax1.bar(x - 1.5*width, sim_ranks,   width, label='Simulated Footfall Rank', color=NAVY)
+rects2 = ax1.bar(x - 0.5*width, real_ranks,  width, label='Real Footfall Rank',      color=ORANGE)
+rects3 = ax1.bar(x + 0.5*width, spend_ranks, width, label='Real Spend Rank',         color=TEAL)
+rects4 = ax1.bar(x + 1.5*width, vac_ranks,   width, label='Real Vacancy Rank',       color='#9C3D54')
 
-ax1.set_title('5.1 Local Performance Rank Alignment (Lower = Better)', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax1.set_title('5.1 Local Performance Rank Alignment (Lower = Better)',
+              fontweight='bold', color=TEXT, fontsize=13, loc='left', pad=10)
 ax1.set_xticks(x)
 ax1.set_xticklabels(labels)
-ax1.set_ylabel('Rank (out of ' + str(len(df_val)) + ' centres)')
+ax1.set_ylabel('Rank (out of ' + str(len(df_val)) + ' centres)',
+               fontweight='bold', color=TEXT, fontsize=11)
+
+# Spines: hide top/right/bottom; left spine = RULE, lw=1
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
-ax1.spines['left'].set_color('#94a3b8')
-ax1.spines['bottom'].set_color('#94a3b8')
-ax1.tick_params(colors='#475569')
-ax1.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+ax1.spines['bottom'].set_visible(False)
+ax1.spines['left'].set_color(RULE)
+ax1.spines['left'].set_linewidth(1)
+
+ax1.tick_params(color=TEXT, labelsize=10)
+ax1.grid(True, axis='y', linestyle=':', alpha=0.6, color=RULE)
 ax1.grid(False, axis='x')
-ax1.set_facecolor('#fafbfc')
 
 # Invert Y-axis so rank 1 is at the top!
 ax1.invert_yaxis()
@@ -138,7 +157,7 @@ ax1.invert_yaxis()
 ymin, ymax = ax1.get_ylim()
 ax1.set_ylim(ymin + 15, -5)
 
-ax1.legend(frameon=True, framealpha=0.9, facecolor='#fcfcfc', edgecolor='#e2e8f0', loc='lower left', fontsize=9)
+ax1.legend(frameon=True, framealpha=0.9, facecolor=BG, edgecolor=RULE, loc='lower left', fontsize=9)
 
 # Add values above bars
 def autolabel(rects, axis):
@@ -149,7 +168,8 @@ def autolabel(rects, axis):
                     xy=(rect.get_x() + rect.get_width() / 2, height),
                     xytext=(0, 3 if axis.yaxis_inverted() else -12),  # vertical offset
                     textcoords="offset points",
-                    ha='center', va='bottom', fontsize=8, color='#334155', fontweight='bold')
+                    ha='center', va='bottom', fontsize=8,
+                    color=TEXT, fontweight='bold')
 
 autolabel(rects1, ax1)
 autolabel(rects2, ax1)
@@ -171,20 +191,24 @@ spend_ratio = (1.0 / row_a['Real Spend Rank']) / (1.0 / row_b['Real Spend Rank']
 
 ratio_labels = ['Simulated Footfall Ratio', 'Real Footfall Ratio', 'Spend Value Proxy Ratio']
 ratios = [sim_ratio, real_ratio, spend_ratio]
-colors = ['#1f4e79', '#c2780e', '#5b3a7d']
+bar_colors = [NAVY, ORANGE, TEAL]
 
-rects = ax2.bar(ratio_labels, ratios, color=colors, width=0.5)
+rects = ax2.bar(ratio_labels, ratios, color=bar_colors, width=0.5)
 
-ax2.set_title(f'5.2 Competitor Choice Ratio ({COMPETITOR_A} vs {COMPETITOR_B})', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
-ax2.set_ylabel('Ratio Value (A / B)')
+ax2.set_title(f'5.2 Competitor Choice Ratio ({COMPETITOR_A} vs {COMPETITOR_B})',
+              fontweight='bold', color=TEXT, fontsize=13, loc='left', pad=10)
+ax2.set_ylabel('Ratio Value (A / B)', fontweight='bold', color=TEXT, fontsize=11)
+
+# Spines: hide top/right/bottom; left spine = RULE, lw=1
 ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
-ax2.spines['left'].set_color('#94a3b8')
-ax2.spines['bottom'].set_color('#94a3b8')
-ax2.tick_params(colors='#475569')
-ax2.grid(True, axis='y', linestyle=':', alpha=0.7, color='#cbd5e1')
+ax2.spines['bottom'].set_visible(False)
+ax2.spines['left'].set_color(RULE)
+ax2.spines['left'].set_linewidth(1)
+
+ax2.tick_params(color=TEXT, labelsize=10)
+ax2.grid(True, axis='y', linestyle=':', alpha=0.6, color=RULE)
 ax2.grid(False, axis='x')
-ax2.set_facecolor('#fafbfc')
 
 # Annotate ratio bars
 for rect in rects:
@@ -193,11 +217,12 @@ for rect in rects:
                 xy=(rect.get_x() + rect.get_width() / 2, height),
                 xytext=(0, 3),  # 3 points vertical offset
                 textcoords="offset points",
-                ha='center', va='bottom', fontsize=10, color='#1e293b', fontweight='bold')
+                ha='center', va='bottom', fontsize=10,
+                color=TEXT, fontweight='bold')
 
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0.02, 1, 0.88], pad=3.0)
 
 # Save image
 output_path = OUTPUTS_ROOT / 'micro_validation_metrics.png'
-plt.savefig(output_path, dpi=300, bbox_inches='tight')
+plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor=BG)
 print(f"Micro-validation plot saved to: {output_path}")

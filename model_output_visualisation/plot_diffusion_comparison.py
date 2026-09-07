@@ -5,8 +5,20 @@ import geopandas as gpd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.lines as lines
 import numpy as np
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# House-style palette
+# ---------------------------------------------------------------------------
+ORANGE  = '#E8482C'
+NAVY    = '#194091'
+BG      = '#F5F7F8'
+TEXT    = '#37474F'
+SUBTEXT = '#546E7A'
+RULE    = '#CFD8DC'
+TEAL    = '#4DB6AC'
 
 # =========================================================================
 # --- CONFIGURATION ---
@@ -224,8 +236,23 @@ for path in BOUNDARY_PATHS:
 print("Setting up 2x2 behavioral diffusion comparison maps...")
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 15))
 
-marker_style = dict(edgecolor='black', linewidth=0.6, alpha=0.9, zorder=6)
-sizes = np.clip(gdf_points['center_size'] * 1.5, 15, 600)
+# --- House-style: figure and axes backgrounds ---
+fig.patch.set_facecolor(BG)
+for ax in [ax1, ax2, ax3, ax4]:
+    ax.set_facecolor(BG)
+
+# --- House-style: header ---
+fig.text(0.04, 0.99, 'Social Diffusion — Ablation Comparison',
+         fontsize=22, fontweight='bold', color=TEXT, ha='left', va='top')
+fig.text(0.04, 0.965,
+         'Rank residuals (Observed − Simulated) for footfall and spend: Diffusion ON vs OFF',
+         fontsize=12, color=SUBTEXT, ha='left', va='top')
+rule_y = 0.955
+fig.add_artist(lines.Line2D([0.04, 0.96], [rule_y, rule_y],
+                             color=RULE, linewidth=1.5, transform=fig.transFigure,
+                             clip_on=False))
+marker_style = dict(edgecolor=TEXT, linewidth=0.6, alpha=0.65, zorder=6)
+sizes = np.clip(gdf_points['center_size'] * 0.7, 10, 300)
 
 def residual_qcut(series, q=5):
     """Bin residuals into quantiles."""
@@ -243,28 +270,33 @@ gdf_points['spend_on_bin'] = residual_qcut(gdf_points['spend_diff_on'], q=5)
 gdf_points['spend_off_bin'] = residual_qcut(gdf_points['spend_diff_off'], q=5)
 
 # Row 1: Footfall residuals
+# Diffusion ON → Blues; Diffusion OFF → YlOrRd; Residual maps → RdBu
 gdf_points.plot(ax=ax1, column='footfall_on_bin', cmap='RdBu', categorical=True, markersize=sizes,
                 legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
-ax1.set_title('10.1 Diffusion ON - Footfall Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax1.set_title('10.1 Diffusion ON — Footfall Residuals',
+              fontweight='bold', fontsize=13, color=TEXT, loc='left', pad=10)
 
 gdf_points.plot(ax=ax2, column='footfall_off_bin', cmap='RdBu', categorical=True, markersize=sizes,
                 legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
-ax2.set_title('10.2 Diffusion OFF - Footfall Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax2.set_title('10.2 Diffusion OFF — Footfall Residuals',
+              fontweight='bold', fontsize=13, color=TEXT, loc='left', pad=10)
 
 # Row 2: Spend residuals
 gdf_points.plot(ax=ax3, column='spend_on_bin', cmap='RdBu', categorical=True, markersize=sizes,
                 legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
-ax3.set_title('10.3 Diffusion ON - Spend Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax3.set_title('10.3 Diffusion ON — Spend Residuals',
+              fontweight='bold', fontsize=13, color=TEXT, loc='left', pad=10)
 
 gdf_points.plot(ax=ax4, column='spend_off_bin', cmap='RdBu', categorical=True, markersize=sizes,
                 legend=True, legend_kwds={'title': 'Residual Quantile', 'fontsize': 'small'}, **marker_style)
-ax4.set_title('10.4 Diffusion OFF - Spend Residuals', fontweight='bold', fontsize=11, color='#1e293b', loc='left', pad=10)
+ax4.set_title('10.4 Diffusion OFF — Spend Residuals',
+              fontweight='bold', fontsize=13, color=TEXT, loc='left', pad=10)
 
 # Apply boundaries and styling
 for ax in [ax1, ax2, ax3, ax4]:
     if gdf_boundary is not None:
         try:
-            gdf_boundary.boundary.plot(ax=ax, edgecolor='#475569', linewidth=0.8, zorder=5, alpha=0.6)
+            gdf_boundary.boundary.plot(ax=ax, edgecolor=SUBTEXT, linewidth=0.8, zorder=5, alpha=0.6)
         except Exception as e:
             print(f"Warning: Failed to draw boundary: {e}")
     ax.set_axis_off()
@@ -275,8 +307,8 @@ for ax in [ax1, ax2, ax3, ax4]:
 # =========================================================================
 # --- Save Figure ---
 # =========================================================================
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 1, 0.95])
 output_file = OUTPUTS_ROOT / 'diffusion_accuracy_comparison.png'
-plt.savefig(output_file, dpi=300, bbox_inches='tight')
+plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor=BG)
 print(f"SUCCESS: Diffusion comparison map saved to: {output_file}")
 plt.close()
